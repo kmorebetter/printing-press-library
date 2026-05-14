@@ -1,0 +1,101 @@
+{
+  "dir": "/Users/bobshah/printing-press/.runstate/cli-printing-press-b8872e85/runs/20260513-164245/working/macctx-pp-cli",
+  "verdict": "WARN",
+  "path_check": {
+    "tested": 0,
+    "valid": 0,
+    "valid_pct": 0
+  },
+  "auth_check": {
+    "spec_scheme": "",
+    "generated_format": "",
+    "match": true,
+    "detail": "spec not provided; auth protocol check skipped"
+  },
+  "browser_session_check": {
+    "required": false,
+    "pass": true,
+    "detail": "spec not provided; browser-session auth check skipped"
+  },
+  "dead_flags": {
+    "total": 0,
+    "dead": 0
+  },
+  "dead_functions": {
+    "total": 13,
+    "dead": 1,
+    "items": [
+      "printError"
+    ]
+  },
+  "pipeline_check": {
+    "sync_calls_domain": false,
+    "search_calls_domain": false,
+    "domain_tables": 0,
+    "detail": "sync Upsert calls not found; search methods not found"
+  },
+  "example_check": {
+    "tested": 0,
+    "with_examples": 0,
+    "valid_examples": 0,
+    "skipped": true,
+    "detail": "could not discover command tree from agent-context: invalid character 'E' looking for beginning of value"
+  },
+  "wiring_check": {
+    "command_tree": {
+      "defined": 17,
+      "registered": 17
+    },
+    "config_consistency": {
+      "consistent": true
+    },
+    "workflow_completeness": {
+      "skipped": true,
+      "total_steps": 0,
+      "mapped_steps": 0,
+      "detail": "no workflow_verify.yaml found"
+    }
+  },
+  "novel_features_check": {
+    "planned": 4,
+    "found": 4
+  },
+  "reimplementation_check": {
+    "checked": 4,
+    "exempted_via_store": 0,
+    "suspicious": [
+      {
+        "command": "dump",
+        "file": "dump.go",
+        "reason": "hand-rolled response: no API client call, no store access"
+      },
+      {
+        "command": "handoff",
+        "file": "handoff.go",
+        "reason": "hand-rolled response: no API client call, no store access"
+      },
+      {
+        "command": "act",
+        "file": "act.go",
+        "reason": "hand-rolled response: no API client call, no store access"
+      },
+      {
+        "command": "clipboard",
+        "file": "clipboard.go",
+        "reason": "hand-rolled response: no API client call, no store access"
+      }
+    ]
+  },
+  "test_presence": {
+    "checked": 0
+  },
+  "naming_check": {
+    "checked": 12
+  },
+  "issues": [
+    "1 dead helper functions found",
+    "sync uses generic Upsert only",
+    "example check skipped: could not discover command tree from agent-context: invalid character 'E' looking for beginning of value",
+    "4/4 novel features look reimplemented: dump (dump.go) — hand-rolled response: no API client call, no store access; handoff (handoff.go) — hand-rolled response: no API client call, no store access; act (act.go) — hand-rolled response: no API client call, no store access; clipboard (clipboard.go) — hand-rolled response: no API client call, no store access"
+  ]
+}

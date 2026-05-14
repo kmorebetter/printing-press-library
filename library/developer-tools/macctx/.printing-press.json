@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-14T05:28:10.935482Z",
+  "printing_press_version": "2.3.9",
+  "api_name": "macctx",
+  "display_name": "macctx",
+  "cli_name": "macctx-pp-cli",
+  "owner": "hiten-shah",
+  "printer_name": "Hiten Shah",
+  "spec_path": "/Users/bobshah/printing-press/.runstate/cli-printing-press-b8872e85/runs/20260513-164245/pipeline/macctx-plan.md",
+  "spec_format": "plan",
+  "mcp_ready": "none",
+  "api_version": "0.2.0",
+  "auth_type": "none",
+  "category": "developer-tools",
+  "description": "Agent-native macOS context and guarded computer-use CLI backed by Peekaboo.",
+  "novel_features": [
+    {
+      "name": "Agent context dump",
+      "command": "dump",
+      "description": "Produce an agent-friendly Mac context bundle with active app, windows, optional screenshot, UI inspection, and clipboard preview.",
+      "rationale": "Turns local desktop state into structured context any agent can consume.",
+      "example": "macctx-pp-cli dump --json --screenshot --see --clipboard",
+      "why_it_matters": "Agents need observability before they can safely help with desktop workflows.",
+      "group": "Agent context"
+    },
+    {
+      "name": "Markdown handoff",
+      "command": "handoff",
+      "description": "Generate a concise markdown handoff describing the visible and active Mac context for pasting into an AI agent.",
+      "rationale": "Bridges desktop context into chat and coding agents without custom integrations.",
+      "example": "macctx-pp-cli handoff --clipboard",
+      "why_it_matters": "Makes the user's current Mac state portable across agent sessions.",
+      "group": "Agent context"
+    },
+    {
+      "name": "Guarded computer-use actions",
+      "command": "act",
+      "description": "Propose or execute Peekaboo-backed UI actions with dry-run defaults and explicit --execute for real clicks, typing, keys, scrolling, and focus.",
+      "rationale": "Separates observation from action so agents can propose commands before human approval.",
+      "example": "macctx-pp-cli act click --on B3",
+      "why_it_matters": "Computer use becomes auditable shell commands instead of opaque remote control.",
+      "group": "Guarded actions"
+    },
+    {
+      "name": "Privacy-safe clipboard preview",
+      "command": "clipboard",
+      "description": "Inspect clipboard type and preview text safely by default, requiring --full before printing full clipboard contents.",
+      "rationale": "Clipboard contents are often sensitive and should not leak into agent prompts by accident.",
+      "example": "macctx-pp-cli clipboard --json",
+      "why_it_matters": "Keeps agent context useful without silently exfiltrating secrets.",
+      "group": "Safety"
+    }
+  ]
+}
