@@ -109,7 +109,7 @@ def validate(cli_dir: Path) -> list[str]:
             problems.append(
                 f"server.mcp_config.env {env_name!r} references missing user_config key {expected_key!r}"
             )
-        if env_value != expected_ref:
+        elif env_value != expected_ref:
             problems.append(
                 f"server.mcp_config.env {env_name!r} should map to {expected_ref!r} (got {env_value!r})"
             )
