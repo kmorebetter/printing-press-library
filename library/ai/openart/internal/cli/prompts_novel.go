@@ -265,8 +265,26 @@ Use --bump key=value to override individual params (e.g. --bump duration=10
 				"autoEnhancePrompt": false,
 				"enableUnlimited":   true,
 			}
-			if !modelSupports(newModel.Resolutions, body["resolution"].(string)) {
-				body["resolution"] = newModel.Resolutions[0]
+			// PATCH: image-family models (nano-banana, gpt-image-2,
+			// flux-2-pro, etc.) have `Resolutions == nil` and ship
+			// `PixelResolutions` instead. The previous fallback did
+			// `newModel.Resolutions[0]` unconditionally on a no-match,
+			// which panics with index-out-of-range on every replay of
+			// an image generation (greptile P1 on PR #554). Merge both
+			// resolution sets for the membership check, then fall back
+			// to the first available resolution from whichever list is
+			// populated. If neither is populated (defensive guard for
+			// any future zero-resolution model), leave the user-supplied
+			// value untouched.
+			candidates := newModel.Resolutions
+			if len(candidates) == 0 {
+				candidates = newModel.PixelResolutions
+			}
+			currentRes, _ := body["resolution"].(string)
+			if !modelSupports(candidates, currentRes) {
+				if len(candidates) > 0 {
+					body["resolution"] = candidates[0]
+				}
 			}
 			d := body["duration"].(int)
 			if d < newModel.DurationMinSec {
@@ -455,10 +473,15 @@ can stop iterating it without thinking.`,
 			}
 
 			// Aggregate from credits ledger by businessType=<model:form>.
+			// PATCH: filter on first_seen_at — the timestamp the local
+			// store first observed the consume event — instead of
+			// synced_at, which is bumped on every resync and would
+			// inflate the `--since` window to "everything ever synced"
+			// after a full historical sync (greptile P1 on PR #554).
 			creditQ := `SELECT amount, json_extract(data, '$.reference.businessType')
 				FROM credits WHERE type = 'CONSUME'`
 			if cutoffStr != "" {
-				creditQ += ` AND synced_at >= '` + cutoffStr + `'`
+				creditQ += ` AND first_seen_at >= '` + cutoffStr + `'`
 			}
 			cRows, err := db.QueryContext(cmd.Context(), creditQ)
 			if err == nil {

@@ -5,6 +5,25 @@
   "base_printing_press_version": "4.5.1",
   "patches": [
     {
+      "id": "prompts-replay-image-family-resolution-guard",
+      "summary": "prompts replay no longer panics when the target model is image-family (Resolutions == nil; PixelResolutions populated instead).",
+      "reason": "Greptile P1 on PR #554: the previous fallback `body['resolution'] = newModel.Resolutions[0]` indexed into a nil slice for nano-banana / gpt-image-2 / flux-2-pro and every other image-family model, crashing prompts replay before the API call. The membership check now consults both Resolutions and PixelResolutions; the fallback picks the first available value from whichever list is populated, and leaves the user-supplied value untouched if both lists are empty.",
+      "files": [
+        "internal/cli/prompts_novel.go"
+      ],
+      "validated_outcome": "Build + go vet + 193 tests / 12 packages green. Image-family replay no longer panics on the resolution fallback path."
+    },
+    {
+      "id": "credits-since-first-seen-at-extension",
+      "summary": "Extend the first_seen_at filter convention to the credits queries in prompts top and stats so they bucket on consume-event observation time rather than the local-resync timestamp.",
+      "reason": "Greptile P1 on PR #554: prompts_novel.go:461 (prompts top credit aggregation) and stats.go:107 (stats overall spend) both filtered credits by synced_at, which is rewritten on every full resync. A first-time historical sync collapsed every past spend into one bucket. Mirror the credits-bucket-by-first-seen-at and credits-forecast-first-seen-at patches that already corrected `credits burn` and `credits forecast`. media-side filters in stats.go and prompts_novel.go still use synced_at because media has a numeric created_at column and a careful unit migration belongs in a separate change; that gap is recorded as a known limitation in the SKILL.md follow-ups note.",
+      "files": [
+        "internal/cli/prompts_novel.go",
+        "internal/cli/stats.go"
+      ],
+      "validated_outcome": "Build + go vet + 193 tests / 12 packages green; verify-skill clean."
+    },
+    {
       "id": "refresh-cookie-domain",
       "summary": "Hardcode the openart.ai cookie domain in refreshStoredBrowserCookies so `auth refresh` actually reaches the extractor pipeline.",
       "reason": "The variable was initialized to the empty string and the function immediately returned 'no cookie domain configured', leaving the rest of the function as dead code. Every user invoking `auth refresh` saw the same misleading error (greptile P1).",

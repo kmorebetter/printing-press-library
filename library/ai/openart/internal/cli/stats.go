@@ -102,9 +102,14 @@ Run 'openart-pp-cli sync' to refresh the local mirror first.`,
 			}
 
 			// Spend totals from credits.
+			// PATCH: filter on first_seen_at (consume-event observation
+			// time) instead of synced_at, which is rewritten on every
+			// resync. Without this, `stats --since 30d` would include
+			// every consume event ever synced after a fresh full sync
+			// (greptile P1 on PR #554).
 			creditQ := `SELECT COALESCE(SUM(-amount), 0), COUNT(*) FROM credits WHERE type = 'CONSUME'`
 			if cutoffStr != "" {
-				creditQ += " AND synced_at >= '" + cutoffStr + "'"
+				creditQ += " AND first_seen_at >= '" + cutoffStr + "'"
 			}
 			var totalSpend, spendEvents int
 			_ = db.QueryRowContext(cmd.Context(), creditQ).Scan(&totalSpend, &spendEvents)
