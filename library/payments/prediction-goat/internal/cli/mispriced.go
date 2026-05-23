@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"math"
@@ -29,6 +30,7 @@ type mispricedResult struct {
 	UntradedSkipped int             `json:"untradedSkipped,omitempty"`
 	MaxDelta        float64         `json:"maxDelta,omitempty"`
 	Pairs           []mispricedPair `json:"pairs"`
+	Meta            *freshnessMeta  `json:"meta,omitempty"`
 }
 
 func newMispricedCmd(flags *rootFlags) *cobra.Command {
@@ -63,12 +65,23 @@ func newMispricedCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("mispriced: %w", err)
 			}
+			// Live-on-read freshness: refresh prices on every pair and
+			// recompute Delta from the refreshed values so the displayed
+			// spread is never a stale cache artifact. Pairs that fall
+			// below the threshold under fresh prices are dropped.
+			outcome := refreshMispricedPairs(cmd.Context(), nil, &result, threshold)
+			result.Meta = buildFreshnessMeta(outcome, indexSyncedAt(db))
 			if flags.asJSON || !isTerminal(cmd.OutOrStdout()) {
 				if err := printJSONFiltered(cmd.OutOrStdout(), result, flags); err != nil {
 					return err
 				}
-			} else if err := printSimpleTable(cmd.OutOrStdout(), []string{"Match", "PM Title", "Kalshi Title", "PM%", "Kalshi%", "Delta"}, mispricedRows(result.Pairs)); err != nil {
-				return err
+			} else {
+				if err := printSimpleTable(cmd.OutOrStdout(), []string{"Match", "PM Title", "Kalshi Title", "PM%", "Kalshi%", "Delta"}, mispricedRows(result.Pairs)); err != nil {
+					return err
+				}
+				if footer := freshnessFooterLine(result.Meta); footer != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), footer)
+				}
 			}
 			if len(result.Pairs) == 0 {
 				if hint := emptyStoreHint(cmd, dbPath, "mispriced", "all"); hint != nil {
@@ -157,6 +170,51 @@ ORDER BY CAST(COALESCE(json_extract(data,'$.volume_24h_fp'),0) AS REAL) DESC LIM
 		pairs = pairs[:limit]
 	}
 	return mispricedResult{Threshold: threshold, Count: len(pairs), Considered: considered, UntradedSkipped: untradedSkipped, MaxDelta: maxDelta, Pairs: pairs}, nil
+}
+
+// refreshMispricedPairs refreshes every pair's PM and Kalshi prices
+// from upstream, recomputes Delta from the live values, and drops
+// pairs that fall below the threshold under refreshed prices.
+// Result.Count is updated to reflect the surviving pairs.
+func refreshMispricedPairs(ctx context.Context, fc freshnessClient, result *mispricedResult, threshold float64) refreshOutcome {
+	polySlugs := make([]string, 0, len(result.Pairs))
+	kalshiTickers := make([]string, 0, len(result.Pairs))
+	for _, p := range result.Pairs {
+		polySlugs = append(polySlugs, p.PM.ID)
+		kalshiTickers = append(kalshiTickers, p.Kalshi.ID)
+	}
+	outcome := refreshVenues(ctx, fc, polySlugs, kalshiTickers)
+	var dummyStatus string
+	filtered := result.Pairs[:0]
+	for _, p := range result.Pairs {
+		if outcome.PolymarketOK {
+			if v, ok := outcome.Polymarket[p.PM.ID]; ok {
+				applyLiveValuesIfPresent(v, &p.PM.YesProbability, &p.PM.Volume24h, &dummyStatus)
+			}
+		}
+		if outcome.KalshiOK {
+			if v, ok := outcome.Kalshi[p.Kalshi.ID]; ok {
+				applyLiveValuesIfPresent(v, &p.Kalshi.YesProbability, &p.Kalshi.Volume24h, &dummyStatus)
+			}
+		}
+		p.Delta = p.PM.YesProbability - p.Kalshi.YesProbability
+		// Re-filter on threshold against refreshed prices. We use a
+		// math.Abs comparison consistent with runMispriced. When the
+		// refresh failed for either venue, keep the pair so the user
+		// still sees the index answer with the staleness flag — the
+		// stale value is the best signal we have.
+		if outcome.PolymarketOK && outcome.KalshiOK && math.Abs(p.Delta) < threshold {
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	// Re-sort by absolute spread under refreshed prices.
+	sort.Slice(filtered, func(i, j int) bool {
+		return math.Abs(filtered[i].Delta) > math.Abs(filtered[j].Delta)
+	})
+	result.Pairs = filtered
+	result.Count = len(filtered)
+	return outcome
 }
 
 func loadMispricedMarkets(cmd *cobra.Command, db *store.Store, query, resourceType string) ([]rawMarket, error) {

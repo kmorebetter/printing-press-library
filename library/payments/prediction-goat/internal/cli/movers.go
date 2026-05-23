@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -18,10 +19,14 @@ type moversItem struct {
 	CurrentPrice float64 `json:"currentPrice"`
 	EndDate      string  `json:"endDate,omitempty"`
 	Volume24h    float64 `json:"volume24h,omitempty"`
+	// PriceSource is set after the live-on-read refresh fires: "live"
+	// or "stale". See freshness.go.
+	PriceSource string `json:"price_source,omitempty"`
 }
 
 type moversResult struct {
-	Items []moversItem `json:"items"`
+	Items []moversItem   `json:"items"`
+	Meta  *freshnessMeta `json:"meta,omitempty"`
 }
 
 func newMoversCmd(flags *rootFlags) *cobra.Command {
@@ -46,13 +51,25 @@ func newMoversCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result := moversResult{Items: items}
+			// Live-on-read freshness: refresh CurrentPrice (and Volume24h)
+			// from upstream for every row. Delta is window-derived and
+			// cannot be refreshed without point-in-time history; the
+			// CurrentPrice refresh is what makes "movers --window 24h"
+			// no longer report yesterday's price as current.
+			outcome := refreshMoversItems(cmd.Context(), nil, items)
+			meta := buildFreshnessMeta(outcome, indexSyncedAtFromPath(cmd.Context(), dbPath))
+			result := moversResult{Items: items, Meta: meta}
 			if flags.asJSON || !isTerminal(cmd.OutOrStdout()) {
 				if err := printJSONFiltered(cmd.OutOrStdout(), result, flags); err != nil {
 					return err
 				}
-			} else if err := printSimpleTable(cmd.OutOrStdout(), []string{"Source", "ID", "Title", "Delta", "%Now", "Volume24h", "EndDate"}, moverRows(items)); err != nil {
-				return err
+			} else {
+				if err := printSimpleTable(cmd.OutOrStdout(), []string{"Source", "ID", "Title", "Delta", "%Now", "Volume24h", "EndDate"}, moverRows(items)); err != nil {
+					return err
+				}
+				if footer := freshnessFooterLine(meta); footer != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), footer)
+				}
 			}
 			if len(items) == 0 {
 				if hint := emptyStoreHint(cmd, dbPath, "movers", venue); hint != nil {
@@ -178,6 +195,57 @@ func interleaveMoversItems(a, b []moversItem, limit int) []moversItem {
 		}
 	}
 	return out
+}
+
+// refreshMoversItems batches by venue, fires one live API call per
+// venue, and overwrites CurrentPrice / Volume24h on each row. Delta
+// is window-derived (oneDayPriceChange / last vs previous on Kalshi)
+// and cannot be live-refreshed without a point-in-time history
+// service; the refresh focuses on CurrentPrice so the
+// "movers --window 24h" answer reports the actual current price
+// alongside its window-relative delta.
+func refreshMoversItems(ctx context.Context, fc freshnessClient, items []moversItem) refreshOutcome {
+	polySlugs := make([]string, 0, len(items))
+	kalshiTickers := make([]string, 0, len(items))
+	for _, it := range items {
+		switch it.Source {
+		case "polymarket":
+			polySlugs = append(polySlugs, it.ID)
+		case "kalshi":
+			kalshiTickers = append(kalshiTickers, it.ID)
+		}
+	}
+	outcome := refreshVenues(ctx, fc, polySlugs, kalshiTickers)
+	var dummyStatus string
+	for i := range items {
+		switch items[i].Source {
+		case "polymarket":
+			if !outcome.PolymarketAsked {
+				continue
+			}
+			if !outcome.PolymarketOK {
+				items[i].PriceSource = priceSourceStale
+				continue
+			}
+			if v, ok := outcome.Polymarket[items[i].ID]; ok {
+				applyLiveValuesIfPresent(v, &items[i].CurrentPrice, &items[i].Volume24h, &dummyStatus)
+			}
+			items[i].PriceSource = priceSourceLive
+		case "kalshi":
+			if !outcome.KalshiAsked {
+				continue
+			}
+			if !outcome.KalshiOK {
+				items[i].PriceSource = priceSourceStale
+				continue
+			}
+			if v, ok := outcome.Kalshi[items[i].ID]; ok {
+				applyLiveValuesIfPresent(v, &items[i].CurrentPrice, &items[i].Volume24h, &dummyStatus)
+			}
+			items[i].PriceSource = priceSourceLive
+		}
+	}
+	return outcome
 }
 
 func moversSQL(venue, window string) string {

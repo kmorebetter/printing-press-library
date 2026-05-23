@@ -31,16 +31,23 @@ type topicHit struct {
 	URL            string  `json:"url,omitempty"`
 	Untraded       bool    `json:"untraded,omitempty"`
 	ExpandedFrom   string  `json:"expandedFrom,omitempty"`
+	// PriceSource is set when the row carries a price/probability that
+	// went through the live refresh pipeline ("live" or "stale"). Rows
+	// with no price-bearing fields (tags, series) leave this empty so
+	// agents can tell a tag-row apart from a price-row whose refresh
+	// genuinely failed.
+	PriceSource string `json:"price_source,omitempty"`
 	// rankScore is the per-hit ranking score (BM25 plus volume weighting)
 	// used by the cross-venue re-rank. Not emitted in JSON output.
 	rankScore float64
 }
 
 type topicResult struct {
-	Topic     string     `json:"topic"`
-	Count     int        `json:"count"`
-	Truncated bool       `json:"truncated,omitempty"`
-	Hits      []topicHit `json:"hits"`
+	Topic     string         `json:"topic"`
+	Count     int            `json:"count"`
+	Truncated bool           `json:"truncated,omitempty"`
+	Hits      []topicHit     `json:"hits"`
+	Meta      *freshnessMeta `json:"meta,omitempty"`
 }
 
 // topicSearchWindow is the over-fetch multiplier the vol-weighted re-rank
@@ -134,16 +141,27 @@ func newTopicCmd(flags *rootFlags) *cobra.Command {
 			if expand {
 				results = expandPolymarketSiblings(cmd, results, limit)
 			}
+			// Live-on-read freshness: refresh price-bearing fields from
+			// the upstream APIs so the cached discovery index never serves
+			// stale prices. Runs AFTER expand/with-prices so synthetic rows
+			// inserted by those steps also get fresh values. See freshness.go.
+			outcome := refreshTopicHits(cmd.Context(), nil, results)
 			for i := range results {
 				results[i].YesPercent = yesPercent(results[i].YesProbability)
 			}
-			result := topicResult{Topic: topic, Count: len(results), Truncated: truncated, Hits: results}
+			meta := buildFreshnessMeta(outcome, indexSyncedAt(db))
+			result := topicResult{Topic: topic, Count: len(results), Truncated: truncated, Hits: results, Meta: meta}
 			if flags.asJSON || !isTerminal(cmd.OutOrStdout()) {
 				if err := printJSONFiltered(cmd.OutOrStdout(), result, flags); err != nil {
 					return err
 				}
-			} else if err := printSimpleTable(cmd.OutOrStdout(), []string{"Source", "Kind", "Title", "%Yes", "Volume24h", "EndDate"}, topicRows(results)); err != nil {
-				return err
+			} else {
+				if err := printSimpleTable(cmd.OutOrStdout(), []string{"Source", "Kind", "Title", "%Yes", "Volume24h", "EndDate"}, topicRows(results)); err != nil {
+					return err
+				}
+				if footer := freshnessFooterLine(meta); footer != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), footer)
+				}
 			}
 			if len(results) == 0 {
 				return notFoundErr(fmt.Errorf("no markets, events, or tags matched topic %q (try a broader query, or run `prediction-goat-pp-cli sync` and `kalshi sync` first)", topic))
@@ -628,6 +646,63 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// refreshTopicHits batches the topic command's hits by venue, fires
+// one live API call per venue, and overwrites the cached
+// price-bearing fields on the in-memory slice. Returns the per-venue
+// outcome so the caller can populate the envelope's price_source.
+//
+// Hits with Kind=="market" carry prices; other kinds (event/tag/
+// series) intentionally have no PriceSource set so an agent can tell
+// a tag-row apart from a market-row whose refresh failed.
+func refreshTopicHits(ctx context.Context, fc freshnessClient, hits []topicHit) refreshOutcome {
+	polySlugs := make([]string, 0, len(hits))
+	kalshiTickers := make([]string, 0, len(hits))
+	for _, h := range hits {
+		if h.Kind != "market" {
+			continue
+		}
+		switch h.Source {
+		case "polymarket":
+			polySlugs = append(polySlugs, h.ID)
+		case "kalshi":
+			kalshiTickers = append(kalshiTickers, h.ID)
+		}
+	}
+	outcome := refreshVenues(ctx, fc, polySlugs, kalshiTickers)
+	for i := range hits {
+		if hits[i].Kind != "market" {
+			continue
+		}
+		switch hits[i].Source {
+		case "polymarket":
+			if !outcome.PolymarketAsked {
+				continue
+			}
+			if !outcome.PolymarketOK {
+				hits[i].PriceSource = priceSourceStale
+				continue
+			}
+			if v, ok := outcome.Polymarket[hits[i].ID]; ok {
+				applyLiveValuesIfPresent(v, &hits[i].YesProbability, &hits[i].Volume24h, &hits[i].Status)
+			}
+			hits[i].PriceSource = priceSourceLive
+		case "kalshi":
+			if !outcome.KalshiAsked {
+				continue
+			}
+			if !outcome.KalshiOK {
+				hits[i].PriceSource = priceSourceStale
+				continue
+			}
+			if v, ok := outcome.Kalshi[hits[i].ID]; ok {
+				applyLiveValuesIfPresent(v, &hits[i].YesProbability, &hits[i].Volume24h, &hits[i].Status)
+			}
+			hits[i].PriceSource = priceSourceLive
+		}
+	}
+	return outcome
 }
 
 func pmStatus(obj map[string]any) string {

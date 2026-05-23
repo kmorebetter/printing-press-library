@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"regexp"
@@ -21,12 +22,17 @@ type marketScreenItem struct {
 	Volume24h      float64 `json:"volume24h,omitempty"`
 	Liquidity      float64 `json:"liquidity,omitempty"`
 	EndDate        string  `json:"endDate,omitempty"`
-	Untraded       bool    `json:"untraded,omitempty"`
+	Untraded bool `json:"untraded,omitempty"`
+	// PriceSource is set after the live-on-read refresh fires: "live"
+	// when the upstream venue answered, "stale" when the refresh
+	// failed for the row's venue. See freshness.go.
+	PriceSource string `json:"price_source,omitempty"`
 }
 
 type trendingItem = marketScreenItem
 type trendingResult struct {
 	Items []trendingItem `json:"items"`
+	Meta  *freshnessMeta `json:"meta,omitempty"`
 }
 
 func newTrendingCmd(flags *rootFlags) *cobra.Command {
@@ -51,7 +57,9 @@ func newTrendingCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if renderErr := renderTrending(cmd, flags, trendingResult{Items: items}); renderErr != nil {
+			outcome := refreshMarketScreenItems(cmd.Context(), nil, items)
+			meta := buildFreshnessMeta(outcome, indexSyncedAtFromPath(cmd.Context(), dbPath))
+			if renderErr := renderTrending(cmd, flags, trendingResult{Items: items, Meta: meta}); renderErr != nil {
 				return renderErr
 			}
 			if len(items) == 0 {
@@ -359,7 +367,61 @@ func renderTrending(cmd *cobra.Command, flags *rootFlags, result trendingResult)
 	if flags.asJSON || !isTerminal(cmd.OutOrStdout()) {
 		return printJSONFiltered(cmd.OutOrStdout(), result, flags)
 	}
-	return printSimpleTable(cmd.OutOrStdout(), []string{"Source", "ID", "Title", "%Yes", "Volume24h", "Liquidity", "EndDate"}, marketScreenRows(result.Items))
+	if err := printSimpleTable(cmd.OutOrStdout(), []string{"Source", "ID", "Title", "%Yes", "Volume24h", "Liquidity", "EndDate"}, marketScreenRows(result.Items)); err != nil {
+		return err
+	}
+	if footer := freshnessFooterLine(result.Meta); footer != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), footer)
+	}
+	return nil
+}
+
+// refreshMarketScreenItems batches the slice by venue, fires a live
+// refresh per venue, and applies the refreshed price-bearing fields
+// to each item. Returns the per-venue outcome so the caller can
+// populate the envelope's price_source.
+func refreshMarketScreenItems(ctx context.Context, fc freshnessClient, items []marketScreenItem) refreshOutcome {
+	polySlugs := make([]string, 0, len(items))
+	kalshiTickers := make([]string, 0, len(items))
+	for _, it := range items {
+		switch it.Source {
+		case "polymarket":
+			polySlugs = append(polySlugs, it.ID)
+		case "kalshi":
+			kalshiTickers = append(kalshiTickers, it.ID)
+		}
+	}
+	outcome := refreshVenues(ctx, fc, polySlugs, kalshiTickers)
+	var dummyStatus string
+	for i := range items {
+		switch items[i].Source {
+		case "polymarket":
+			if !outcome.PolymarketAsked {
+				continue
+			}
+			if !outcome.PolymarketOK {
+				items[i].PriceSource = priceSourceStale
+				continue
+			}
+			if v, ok := outcome.Polymarket[items[i].ID]; ok {
+				applyLiveValuesIfPresent(v, &items[i].YesProbability, &items[i].Volume24h, &dummyStatus)
+			}
+			items[i].PriceSource = priceSourceLive
+		case "kalshi":
+			if !outcome.KalshiAsked {
+				continue
+			}
+			if !outcome.KalshiOK {
+				items[i].PriceSource = priceSourceStale
+				continue
+			}
+			if v, ok := outcome.Kalshi[items[i].ID]; ok {
+				applyLiveValuesIfPresent(v, &items[i].YesProbability, &items[i].Volume24h, &dummyStatus)
+			}
+			items[i].PriceSource = priceSourceLive
+		}
+	}
+	return outcome
 }
 
 func marketScreenRows(items []marketScreenItem) [][]string {

@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -34,10 +35,11 @@ type compareVenue struct {
 }
 
 type compareResult struct {
-	Topic    string         `json:"topic"`
-	Pairs    []comparePair  `json:"pairs"`
+	Topic    string           `json:"topic"`
+	Pairs    []comparePair    `json:"pairs"`
 	Unpaired *compareUnpaired `json:"unpaired,omitempty"`
-	Reason   string         `json:"reason,omitempty"`
+	Reason   string           `json:"reason,omitempty"`
+	Meta     *freshnessMeta   `json:"meta,omitempty"`
 }
 
 // compareUnpaired surfaces the top hits per venue when pairing fails so
@@ -125,7 +127,12 @@ func newCompareCmd(flags *rootFlags) *cobra.Command {
 					truePairs = append(truePairs, p)
 				}
 			}
-			result := compareResult{Topic: topic, Pairs: truePairs}
+			// Live-on-read freshness: refresh the price-bearing fields on
+			// every PM and Kalshi compareVenue before we serialize the
+			// pairs. See freshness.go for the design.
+			outcome := refreshComparePairs(cmd.Context(), nil, truePairs)
+			meta := buildFreshnessMeta(outcome, indexSyncedAt(db))
+			result := compareResult{Topic: topic, Pairs: truePairs, Meta: meta}
 			if len(truePairs) == 0 {
 				result.Unpaired = buildUnpaired(pmMarkets, kalshiMarkets, 5)
 				if len(pmMarkets) == 0 && len(kalshiMarkets) == 0 {
@@ -138,8 +145,13 @@ func newCompareCmd(flags *rootFlags) *cobra.Command {
 				if err := printJSONFiltered(cmd.OutOrStdout(), result, flags); err != nil {
 					return err
 				}
-			} else if err := printCompareTable(cmd.OutOrStdout(), truePairs); err != nil {
-				return err
+			} else {
+				if err := printCompareTable(cmd.OutOrStdout(), truePairs); err != nil {
+					return err
+				}
+				if footer := freshnessFooterLine(meta); footer != "" {
+					fmt.Fprintln(cmd.OutOrStdout(), footer)
+				}
 			}
 			if len(truePairs) == 0 {
 				return notFoundErr(fmt.Errorf("no Polymarket-Kalshi market pairs found for topic %q (reason: %s — see unpaired list for per-venue candidates, or pass --pair pm-slug=kalshi-ticker)", topic, result.Reason))
@@ -314,6 +326,45 @@ func pairCompareMarkets(topic string, pmMarkets, kalshiMarkets []rawMarket, limi
 		}
 	}
 	return pairs
+}
+
+// refreshComparePairs batches every pair's PM and Kalshi sides by
+// venue, fires one live API call per venue, and overwrites the
+// price-bearing fields on the in-memory compareVenue values.
+// DeltaPct is recomputed from the refreshed prices so it never
+// reports a stale spread.
+func refreshComparePairs(ctx context.Context, fc freshnessClient, pairs []comparePair) refreshOutcome {
+	polySlugs := make([]string, 0, len(pairs))
+	kalshiTickers := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		if p.PM != nil {
+			polySlugs = append(polySlugs, p.PM.ID)
+		}
+		if p.Kalshi != nil {
+			kalshiTickers = append(kalshiTickers, p.Kalshi.ID)
+		}
+	}
+	outcome := refreshVenues(ctx, fc, polySlugs, kalshiTickers)
+	var dummyStatus string
+	for i := range pairs {
+		if pairs[i].PM != nil && outcome.PolymarketOK {
+			if v, ok := outcome.Polymarket[pairs[i].PM.ID]; ok {
+				applyLiveValuesIfPresent(v, &pairs[i].PM.YesProbability, &pairs[i].PM.Volume24h, &dummyStatus)
+			}
+		}
+		if pairs[i].Kalshi != nil && outcome.KalshiOK {
+			if v, ok := outcome.Kalshi[pairs[i].Kalshi.ID]; ok {
+				applyLiveValuesIfPresent(v, &pairs[i].Kalshi.YesProbability, &pairs[i].Kalshi.Volume24h, &dummyStatus)
+			}
+		}
+		// Recompute the spread from refreshed prices so DeltaPct never
+		// surfaces a stale value.
+		if pairs[i].PM != nil && pairs[i].Kalshi != nil {
+			delta := (pairs[i].PM.YesProbability - pairs[i].Kalshi.YesProbability) * 100
+			pairs[i].DeltaPct = &delta
+		}
+	}
+	return outcome
 }
 
 func rawMarketFromJSON(resourceType, fallbackID, raw string) (rawMarket, bool) {

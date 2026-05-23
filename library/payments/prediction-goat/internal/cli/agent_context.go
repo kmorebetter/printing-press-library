@@ -14,8 +14,9 @@ import (
 
 // agentContextSchemaVersion is bumped on any breaking change to the JSON
 // shape emitted by `agent-context`. Agents should check this before
-// parsing. Shape at v3 adds kind-aware auth env var metadata.
-const agentContextSchemaVersion = "3"
+// parsing. Shape at v3 adds kind-aware auth env var metadata. Shape at
+// v4 advertises the discovery-command live-on-read freshness contract.
+const agentContextSchemaVersion = "4"
 
 // agentContext is the structured description of this CLI consumed by AI
 // agents. Inspired by Cloudflare's /cdn-cgi/explorer/api runtime endpoint
@@ -29,6 +30,27 @@ type agentContext struct {
 	Commands                   []agentContextCommand  `json:"commands"`
 	AvailableProfiles          []string               `json:"available_profiles"`
 	FeedbackEndpointConfigured bool                   `json:"feedback_endpoint_configured"`
+	Freshness                  *agentContextFreshness `json:"freshness,omitempty"`
+}
+
+// agentContextFreshness advertises the live-on-read price refresh
+// contract to agents. The discovery commands (topic, compare,
+// mispriced, trending, movers, resolving, liquid, new) refresh
+// price-bearing fields from upstream before serializing the result,
+// and surface the outcome in `meta.price_source` ("live" | "stale" |
+// "mixed" | "index") and `meta.index_synced_at` (the most recent
+// sync_state.last_synced_at for the price-bearing tables).
+//
+// Agents that see `price_source: "stale"` on a result know the
+// upstream refresh failed and they're looking at the cached value;
+// they may want to retry or surface the staleness to the user.
+type agentContextFreshness struct {
+	// Commands lists the subcommands that emit `meta.price_source` and
+	// `meta.index_synced_at` on their JSON output.
+	Commands []string `json:"commands"`
+	// PriceSourceValues enumerates the possible values for
+	// `meta.price_source` in the response envelope.
+	PriceSourceValues []string `json:"price_source_values"`
 }
 
 type agentContextCLI struct {
@@ -127,6 +149,15 @@ func buildAgentContext(rootCmd *cobra.Command) agentContext {
 		Commands:                   collectAgentCommands(rootCmd),
 		AvailableProfiles:          profiles,
 		FeedbackEndpointConfigured: FeedbackEndpointConfigured(),
+		Freshness: &agentContextFreshness{
+			Commands: []string{
+				"topic", "compare", "mispriced",
+				"trending", "movers", "resolving", "liquid", "new",
+			},
+			PriceSourceValues: []string{
+				priceSourceLive, priceSourceStale, priceSourceMixed, priceSourceIndex,
+			},
+		},
 	}
 }
 

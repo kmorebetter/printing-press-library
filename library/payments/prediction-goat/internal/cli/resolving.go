@@ -42,7 +42,9 @@ func newResolvingCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if renderErr := renderTrending(cmd, flags, trendingResult{Items: items}); renderErr != nil {
+			outcome := refreshMarketScreenItems(cmd.Context(), nil, items)
+			meta := buildFreshnessMeta(outcome, indexSyncedAtFromPath(cmd.Context(), dbPath))
+			if renderErr := renderTrending(cmd, flags, trendingResult{Items: items, Meta: meta}); renderErr != nil {
 				return renderErr
 			}
 			if len(items) == 0 {
