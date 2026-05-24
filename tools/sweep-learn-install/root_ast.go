@@ -60,6 +60,27 @@ const (
 // detectRootShape parses root.go and decides which shape it carries.
 // Returns rootShapeUnknown when the file doesn't even parse so the
 // caller surfaces a clear error rather than silently no-oping.
+//
+// Three root shapes are observed in the published library; only the
+// first two are auto-supported by this sweep:
+//
+//  1. rootShapeFlagsStruct — canonical shape every newer CLI ships:
+//     `type rootFlags struct{}` + `Execute()` declaring
+//     `var flags rootFlags` locally OR
+//     `func newRootCmd(flags *rootFlags) *cobra.Command`. The AST
+//     patcher detects parameter-vs-local in
+//     flagsExprForAddCommands and emits the right flags expression
+//     for each constructor call.
+//  2. rootShapeLegacy — agent-capture / instacart-style
+//     package-global `var rootCmd` with no rootFlags struct. The
+//     sweep refuses these.
+//  3. Factory shape — `func Root() *cobra.Command` (or similar)
+//     that constructs the command externally with no rootFlags
+//     struct in scope. instacart ships this. detectRootShape
+//     surfaces it via a distinct refusal message so a future
+//     maintainer can tell it apart from the totally-unknown case
+//     and route the CLI through a manual retrofit; the auto-sweep
+//     intentionally does not patch this shape.
 func detectRootShape(src []byte) (rootShape, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "root.go", src, parser.ParseComments)
@@ -69,23 +90,40 @@ func detectRootShape(src []byte) (rootShape, error) {
 
 	hasRootFlagsType := false
 	hasPackageRootCmd := false
+	hasRootFactory := false
 	for _, decl := range f.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok {
-			continue
-		}
-		for _, spec := range gen.Specs {
-			switch s := spec.(type) {
-			case *ast.TypeSpec:
-				if s.Name != nil && s.Name.Name == "rootFlags" {
-					hasRootFlagsType = true
-				}
-			case *ast.ValueSpec:
-				for _, n := range s.Names {
-					if n.Name == "rootCmd" {
-						hasPackageRootCmd = true
+		switch d := decl.(type) {
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					if s.Name != nil && s.Name.Name == "rootFlags" {
+						hasRootFlagsType = true
+					}
+				case *ast.ValueSpec:
+					for _, n := range s.Names {
+						if n.Name == "rootCmd" {
+							hasPackageRootCmd = true
+						}
 					}
 				}
+			}
+		case *ast.FuncDecl:
+			// Detect the third shape: an exported, package-level
+			// factory like `func Root() *cobra.Command`. Names like
+			// `RootCmd` are also treated as factories. Only fires
+			// when there is no rootFlags struct, so the canonical
+			// shape (which can also expose a RootCmd helper)
+			// continues to land in rootShapeFlagsStruct.
+			if d.Recv != nil {
+				continue
+			}
+			if d.Name == nil {
+				continue
+			}
+			n := d.Name.Name
+			if n == "Root" || n == "RootCmd" {
+				hasRootFactory = true
 			}
 		}
 	}
@@ -96,7 +134,16 @@ func detectRootShape(src []byte) (rootShape, error) {
 	if hasPackageRootCmd {
 		return rootShapeLegacy, nil
 	}
-	return rootShapeUnknown, fmt.Errorf("root.go shape unrecognized (no rootFlags type, no var rootCmd)")
+	if hasRootFactory {
+		// Recognized but unsupported: instacart's `func Root() *cobra.Command`
+		// pattern carries no rootFlags struct and constructs the
+		// command externally. The auto-sweep does not patch this
+		// shape — see tools/sweep-learn-install/README.md
+		// "Recognized but unsupported root shapes" for the manual
+		// retrofit path.
+		return rootShapeUnknown, fmt.Errorf("root.go uses the `func Root() *cobra.Command` factory shape with no rootFlags struct (recognized but unsupported by auto-sweep; manual retrofit required, see tools/sweep-learn-install/README.md)")
+	}
+	return rootShapeUnknown, fmt.Errorf("root.go shape unrecognized (no rootFlags type, no var rootCmd, no Root()/RootCmd() factory)")
 }
 
 // patchRootAST applies the four injections (flag field, BoolVar binding,
@@ -229,6 +276,16 @@ func lastLineEndContaining(src, needle string) int {
 // alongside; this injection declares the local learnCfg variable
 // teach/recall/learnings consume.
 //
+// The constructors expect `*rootFlags`, so the argument expression
+// depends on the surrounding scope's `flags` identifier:
+//
+//   - When `flags` is a local value (`var flags rootFlags` inside
+//     Execute), we pass `&flags`.
+//   - When `flags` is already a pointer parameter
+//     (`func newRootCmd(flags *rootFlags)` — the company-goat /
+//     podcast-goat shape), we pass `flags` directly. Passing `&flags`
+//     there yields `**rootFlags` and fails to compile.
+//
 // Idempotent: skipped when newTeachCmd is already referenced.
 func injectLearnAddCommands(src string, ctx sweepCtx) (string, bool) {
 	if strings.Contains(src, "newTeachCmd(") {
@@ -241,17 +298,106 @@ func injectLearnAddCommands(src string, ctx sweepCtx) (string, bool) {
 	if lineEnd < 0 {
 		return src, false
 	}
+	// Figure out the right flags expression for the surrounding scope.
+	// If the AST scan can't decide, fall back to `&flags` (the canonical
+	// shape that ships with newer generator emission) so the legacy
+	// behavior is preserved when detection fails.
+	flagsExpr := flagsExprForAddCommands(src, lineEnd)
 	// learnCfg is built once and passed by pointer to each of teach,
 	// recall, and learnings so they share configuration. The two
 	// manual-install commands (teach-pattern, teach-lookup) take only
 	// flags per the generator template.
-	insertion := "\tlearnCfg := newLearnConfig()\n" +
-		"\trootCmd.AddCommand(newTeachCmd(&flags, learnCfg))\n" +
-		"\trootCmd.AddCommand(newRecallCmd(&flags, learnCfg))\n" +
-		"\trootCmd.AddCommand(newLearningsCmd(&flags, learnCfg))\n" +
-		"\trootCmd.AddCommand(newTeachPatternCmd(&flags))\n" +
-		"\trootCmd.AddCommand(newTeachLookupCmd(&flags))\n"
+	insertion := fmt.Sprintf("\tlearnCfg := newLearnConfig()\n"+
+		"\trootCmd.AddCommand(newTeachCmd(%s, learnCfg))\n"+
+		"\trootCmd.AddCommand(newRecallCmd(%s, learnCfg))\n"+
+		"\trootCmd.AddCommand(newLearningsCmd(%s, learnCfg))\n"+
+		"\trootCmd.AddCommand(newTeachPatternCmd(%s))\n"+
+		"\trootCmd.AddCommand(newTeachLookupCmd(%s))\n",
+		flagsExpr, flagsExpr, flagsExpr, flagsExpr, flagsExpr)
 	return src[:lineEnd] + insertion + src[lineEnd:], true
+}
+
+// flagsExprForAddCommands returns the expression to use for passing
+// the rootFlags pointer to the new<X>Cmd constructors at insertion
+// offset `insertOffset`. Returns "&flags" if `flags` is in scope as
+// a `rootFlags` value (the canonical newer-generator shape) or "flags"
+// if it's in scope as `*rootFlags` (the older newRootCmd(flags
+// *rootFlags) shape used by company-goat / podcast-goat).
+//
+// Falls back to "&flags" when the AST scan can't decide so a parser
+// hiccup never silently breaks the canonical-shape case.
+func flagsExprForAddCommands(src string, insertOffset int) string {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "root.go", src, parser.ParseComments)
+	if err != nil {
+		return "&flags"
+	}
+	// Find the function decl whose body brackets `insertOffset` and
+	// look up the type of `flags` in that scope. Parameters win over
+	// locals (the bug case has `flags *rootFlags` as a parameter and
+	// no `var flags rootFlags` local at all).
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
+		}
+		start := fset.Position(fn.Body.Lbrace).Offset
+		end := fset.Position(fn.Body.Rbrace).Offset
+		if insertOffset < start || insertOffset > end {
+			continue
+		}
+		// Parameter `flags`?
+		if fn.Type != nil && fn.Type.Params != nil {
+			for _, field := range fn.Type.Params.List {
+				for _, name := range field.Names {
+					if name.Name != "flags" {
+						continue
+					}
+					if _, isStar := field.Type.(*ast.StarExpr); isStar {
+						return "flags"
+					}
+					return "&flags"
+				}
+			}
+		}
+		// Local `var flags rootFlags` or `flags := rootFlags{}` inside
+		// the function body. The canonical shape ships this form;
+		// scan for it so we still return "&flags" when the parameter
+		// scan was empty.
+		hasLocalValue := false
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			switch s := n.(type) {
+			case *ast.DeclStmt:
+				gd, ok := s.Decl.(*ast.GenDecl)
+				if !ok || gd.Tok != token.VAR {
+					return true
+				}
+				for _, spec := range gd.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for _, name := range vs.Names {
+						if name.Name != "flags" {
+							continue
+						}
+						// `var flags rootFlags` — value, not pointer.
+						if _, isStar := vs.Type.(*ast.StarExpr); !isStar {
+							hasLocalValue = true
+						}
+					}
+				}
+			}
+			return true
+		})
+		if hasLocalValue {
+			return "&flags"
+		}
+		// Found the enclosing function but couldn't decide; fall
+		// through to default.
+		return "&flags"
+	}
+	return "&flags"
 }
 
 // injectLearnHookSkipList adds the learnHookSkipList map and the
