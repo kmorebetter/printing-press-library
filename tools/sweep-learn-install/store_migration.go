@@ -26,6 +26,7 @@ package main
 import (
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"regexp"
@@ -148,6 +149,13 @@ func patchStoreMigrations(src string, _ sweepCtx) (string, bool, error) {
 	// teach.go calls it directly so we back-fill here. Idempotent.
 	newSrc = ensureStoreDBAccessor(newSrc)
 
+	// Factory-shape CLIs (instacart) ship `func Open() (*Store, error)`
+	// with no path argument; the sweep-emitted teach.go calls
+	// `store.Open(dbPath)`. Convert to a variadic signature so both
+	// existing no-arg callers AND the new path-bearing callers
+	// compile. Idempotent + scoped: refuses on out-of-contract bodies.
+	newSrc = ensureStoreOpenAcceptsPath(newSrc)
+
 	return newSrc, newSrc != src, nil
 }
 
@@ -162,6 +170,106 @@ func hasStoreDBAccessor(src string) bool {
 	// receiver name would be on the operator to keep working.
 	return strings.Contains(src, ") DB() *sql.DB {") ||
 		strings.Contains(src, ") DB() *sql.DB{")
+}
+
+// ensureStoreOpenAcceptsPath patches `func Open() (*Store, error)` to
+// `func Open(learnPath ...string) (*Store, error)` when the host
+// shipped a no-arg Open. The sweep-emitted teach.go calls
+// `store.Open(dbPath)` with a string argument, which the no-arg
+// signature rejects at compile time. The variadic shape is backwards
+// compatible with existing `store.Open()` callers (every CLI's
+// config.go, etc.) while accepting the new positional path the
+// teach.go template passes.
+//
+// Parameter name is `learnPath` (not `path`) so the prelude never
+// shadows a local `path :=` declaration the existing function body
+// commonly carries.
+//
+// Body patch: when the slice is non-empty AND the first element is
+// non-empty, the function returns OpenAt(learnPath[0]) instead of
+// computing the default. Refusal is silent (source returned
+// unchanged) when the body does not open with a recognizable
+// `dir, err := config.Dir()` prelude; an out-of-contract Open()
+// shape keeps its original signature.
+//
+// Idempotent: a second pass sees the variadic parameter already in
+// place and is a no-op.
+func ensureStoreOpenAcceptsPath(src string) string {
+	// Quick gate: file must declare `func Open() (*Store, error)`.
+	// The check uses a stable substring match so we don't pay AST
+	// parsing cost on the (overwhelming) majority of CLIs whose
+	// Open already accepts a path or doesn't exist at all.
+	const noArgSig = "func Open() (*Store, error) {"
+	const variadicSig = "func Open(learnPath ...string) (*Store, error) {"
+	if strings.Contains(src, variadicSig) {
+		return src
+	}
+	if !strings.Contains(src, noArgSig) {
+		return src
+	}
+
+	// Locate the function body and splice in the path-override prelude
+	// just after the opening brace. Conservative: only patch when the
+	// body opens with the canonical `dir, err := config.Dir()` line —
+	// any other body shape is an out-of-contract host and gets left
+	// alone.
+	sigIdx := strings.Index(src, noArgSig)
+	if sigIdx < 0 {
+		return src
+	}
+	bodyStart := sigIdx + len(noArgSig)
+	// Tolerate any whitespace + newline before the body's first line.
+	preludeStart := bodyStart
+	for preludeStart < len(src) && (src[preludeStart] == ' ' || src[preludeStart] == '\t' || src[preludeStart] == '\n' || src[preludeStart] == '\r') {
+		preludeStart++
+	}
+	if !strings.HasPrefix(src[preludeStart:], "dir, err := config.Dir()") {
+		return src
+	}
+
+	// Build the new file: replace the signature + insert the
+	// path-override prelude at the body's first statement.
+	rewrittenSig := strings.Replace(src, noArgSig, variadicSig, 1)
+	// Find the new positions in rewrittenSig (the substring shifted
+	// because variadicSig is longer than noArgSig).
+	newSigIdx := strings.Index(rewrittenSig, variadicSig)
+	if newSigIdx < 0 {
+		return src
+	}
+	newBodyStart := newSigIdx + len(variadicSig)
+	newPreludeStart := newBodyStart
+	for newPreludeStart < len(rewrittenSig) && (rewrittenSig[newPreludeStart] == ' ' || rewrittenSig[newPreludeStart] == '\t' || rewrittenSig[newPreludeStart] == '\n' || rewrittenSig[newPreludeStart] == '\r') {
+		newPreludeStart++
+	}
+	// Match the body's existing indent so the splice stays gofmt-clean.
+	indent := "\t"
+	for i := newPreludeStart; i < len(rewrittenSig); i++ {
+		if rewrittenSig[i] == ' ' || rewrittenSig[i] == '\t' {
+			continue
+		}
+		// Walk back to compute the leading whitespace of this line.
+		lineStart := i
+		for lineStart > 0 && rewrittenSig[lineStart-1] != '\n' {
+			lineStart--
+		}
+		ws := rewrittenSig[lineStart:i]
+		if ws != "" {
+			indent = ws
+		}
+		break
+	}
+	prelude := indent + "if len(learnPath) > 0 && learnPath[0] != \"\" {\n" +
+		indent + "\treturn OpenAt(learnPath[0])\n" +
+		indent + "}\n"
+	out := rewrittenSig[:newPreludeStart] + prelude + rewrittenSig[newPreludeStart:]
+	// Final gofmt so any indentation drift settles into canonical
+	// shape. Falls through on parse errors (an unrelated host change
+	// could surface a separate compile error rather than getting
+	// masked by gofmt-rejection).
+	if formatted, err := format.Source([]byte(out)); err == nil {
+		return string(formatted)
+	}
+	return out
 }
 
 // ensureStoreDBAccessor appends `func (s *Store) DB() *sql.DB` to
@@ -274,6 +382,11 @@ func bootstrapLearnMigrations(src string) (string, bool, error) {
 	// teach.go calls it directly so we back-fill here. Idempotent.
 	newSrc = ensureStoreDBAccessor(newSrc)
 
+	// Factory-shape CLIs (instacart) ship `func Open() (*Store, error)`
+	// with no path argument; widen to variadic so the teach.go
+	// `store.Open(dbPath)` call compiles. Idempotent + scoped.
+	newSrc = ensureStoreOpenAcceptsPath(newSrc)
+
 	return newSrc, newSrc != src, nil
 }
 
@@ -299,14 +412,20 @@ func findMigrationsSliceRange(src string) (migrationsSliceRange, error) {
 		if !ok {
 			return true
 		}
-		// Match `migrations := []string{...}` — short-var-decl with a
-		// single LHS identifier named "migrations" and a single
-		// composite-literal RHS whose element type is []string.
+		// Match `migrations := []string{...}` or `stmts := []string{...}` —
+		// short-var-decl with a single LHS identifier named "migrations"
+		// (the canonical generator emission) or "stmts" (a few older
+		// hand-rolled library CLIs: instacart, dreo, google-search-console)
+		// and a single composite-literal RHS whose element type is
+		// []string.
 		if assign.Tok != token.DEFINE || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
 			return true
 		}
 		ident, ok := assign.Lhs[0].(*ast.Ident)
-		if !ok || ident.Name != "migrations" {
+		if !ok {
+			return true
+		}
+		if ident.Name != "migrations" && ident.Name != "stmts" {
 			return true
 		}
 		comp, ok := assign.Rhs[0].(*ast.CompositeLit)
@@ -326,10 +445,10 @@ func findMigrationsSliceRange(src string) (migrationsSliceRange, error) {
 	})
 
 	if len(matches) == 0 {
-		return migrationsSliceRange{}, fmt.Errorf("bootstrap: no `migrations := []string{...}` slice found in store.go (manual review needed)")
+		return migrationsSliceRange{}, fmt.Errorf("bootstrap: no `migrations := []string{...}` (or `stmts := []string{...}`) slice found in store.go (manual review needed)")
 	}
 	if len(matches) > 1 {
-		return migrationsSliceRange{}, fmt.Errorf("bootstrap: multiple `migrations := []string{...}` slices found (manual review needed)")
+		return migrationsSliceRange{}, fmt.Errorf("bootstrap: multiple migrations/stmts `[]string{...}` slices found (manual review needed)")
 	}
 
 	comp := matches[0]

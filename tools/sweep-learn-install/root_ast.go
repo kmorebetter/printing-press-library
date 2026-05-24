@@ -50,11 +50,18 @@ const (
 	// against that local. The generator emits this for every new
 	// CLI; the sweep retrofits learn wiring into it.
 	rootShapeFlagsStruct
-	// rootShapeLegacy is the agent-capture / instacart shape: a
-	// package-global var rootCmd with no rootFlags struct. The AST
-	// sweep refuses to patch this shape and reports it to the
-	// operator for manual review.
+	// rootShapeLegacy is the agent-capture shape: a package-global
+	// var rootCmd with no rootFlags struct. The AST sweep refuses to
+	// patch this shape and reports it to the operator for manual
+	// review.
 	rootShapeLegacy
+	// rootShapeFactory is the instacart / factory shape: a top-level
+	// `func Root() *cobra.Command` (or `func RootCmd()`) that
+	// constructs the command externally with no rootFlags struct.
+	// The sweep patches this shape by emitting a tiny rootFlags shim
+	// (templates/cli/learn_root_shim.go.tmpl) and injecting the learn
+	// wiring just before the factory's final `return root` statement.
+	rootShapeFactory
 )
 
 // detectRootShape parses root.go and decides which shape it carries.
@@ -135,22 +142,44 @@ func detectRootShape(src []byte) (rootShape, error) {
 		return rootShapeLegacy, nil
 	}
 	if hasRootFactory {
-		// Recognized but unsupported: instacart's `func Root() *cobra.Command`
-		// pattern carries no rootFlags struct and constructs the
-		// command externally. The auto-sweep does not patch this
-		// shape — see tools/sweep-learn-install/README.md
-		// "Recognized but unsupported root shapes" for the manual
-		// retrofit path.
-		return rootShapeUnknown, fmt.Errorf("root.go uses the `func Root() *cobra.Command` factory shape with no rootFlags struct (recognized but unsupported by auto-sweep; manual retrofit required, see tools/sweep-learn-install/README.md)")
+		// instacart's `func Root() *cobra.Command` pattern carries no
+		// rootFlags struct and constructs the command externally. The
+		// sweep handles this by emitting a tiny rootFlags shim
+		// alongside the canonical learn surface and injecting the
+		// wiring just before the factory's final `return root`. See
+		// tools/sweep-learn-install/README.md "Factory-shape root.go
+		// support" for details.
+		return rootShapeFactory, nil
 	}
 	return rootShapeUnknown, fmt.Errorf("root.go shape unrecognized (no rootFlags type, no var rootCmd, no Root()/RootCmd() factory)")
 }
 
-// patchRootAST applies the four injections (flag field, BoolVar binding,
-// learnCfg + AddCommands, skip-list) to a canonical-shape root.go.
+// patchRootAST applies the per-shape injections to a CLI's root.go.
 // Returns the new source (still go-fmt-clean because edits operate on
 // whole lines or self-contained blocks) plus a changed boolean.
+//
+// The function dispatches on the detected shape:
+//
+//   - rootShapeFlagsStruct / canonical: four injections (flag field,
+//     BoolVar binding, learnCfg + AddCommands, skip-list) splice into
+//     the existing Execute() / newRootCmd body.
+//   - rootShapeFactory: three injections (learnCfg + flag binding +
+//     AddCommands + skip-list) splice into the Root() factory just
+//     before its final `return root`; the rootFlags struct itself
+//     ships in the sweep-emitted internal/cli/learn_root_shim.go and
+//     is not touched here.
+//   - rootShapeLegacy / unknown: not handled here; the caller (sweepCLI)
+//     gates on detectRootShape and refuses these before reaching this
+//     function.
 func patchRootAST(src string, ctx sweepCtx) (string, bool, error) {
+	shape, err := detectRootShape([]byte(src))
+	if err != nil {
+		return src, false, err
+	}
+	if shape == rootShapeFactory {
+		return patchRootASTFactory(src, ctx)
+	}
+
 	out := src
 	changed := false
 
@@ -181,6 +210,159 @@ func patchRootAST(src string, ctx sweepCtx) (string, bool, error) {
 		}
 	}
 	return out, changed, nil
+}
+
+// patchRootASTFactory injects the learn wiring into a factory-shape
+// root.go (instacart-style `func Root() *cobra.Command`). The factory
+// constructs the cobra command externally and carries no rootFlags
+// struct of its own; the sweep ships a compatibility shim alongside
+// (internal/cli/learn_root_shim.go) so the injected AddCommand calls
+// can reference rootFlags without touching the host file.
+//
+// Two injections, both inside the factory body just before the final
+// `return root` (or `return <ident>`) statement:
+//
+//  1. The `--no-learn` PersistentFlags binding plus a learnCfg /
+//     learnFlags pair backing the AddCommand arguments.
+//  2. Five AddCommand calls: teach / recall / learnings / teach-pattern
+//     / teach-lookup. Plus the shared learnHookSkipList map appended
+//     at file end (same emission as the canonical path).
+//
+// The variable identifier the factory returns is detected via AST so
+// `return root`, `return rootCmd`, `return cmd` etc. all work. We use
+// that same identifier for the .AddCommand / .PersistentFlags calls
+// so the splice slots into the surrounding scope cleanly.
+//
+// Idempotent: a second run finds the marker (`newTeachCmd(`) already
+// present and skips the body splice; the skip-list helper has its own
+// idempotency probe.
+func patchRootASTFactory(src string, ctx sweepCtx) (string, bool, error) {
+	out := src
+	changed := false
+
+	if added, ok := injectFactoryLearnWiring(out, ctx); ok {
+		out = added
+		changed = true
+	}
+	if added, ok := injectLearnHookSkipList(out); ok {
+		out = added
+		changed = true
+	}
+	if changed {
+		if formatted, err := format.Source([]byte(out)); err == nil {
+			out = string(formatted)
+		}
+	}
+	return out, changed, nil
+}
+
+// injectFactoryLearnWiring locates the factory function's body, finds
+// the identifier it returns (root / rootCmd / cmd / etc.), and splices
+// the learn-wiring block in just before the return statement.
+// Idempotent: skipped when newTeachCmd is already referenced anywhere
+// in the source.
+func injectFactoryLearnWiring(src string, _ sweepCtx) (string, bool) {
+	if strings.Contains(src, "newTeachCmd(") {
+		return src, false
+	}
+
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "root.go", src, parser.ParseComments)
+	if err != nil {
+		return src, false
+	}
+
+	// Find the first top-level `func Root()` / `func RootCmd()`
+	// declaration whose body returns a *cobra.Command. Conservative:
+	// take the first match; instacart-shape files only ship one.
+	var factory *ast.FuncDecl
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv != nil || fn.Name == nil || fn.Body == nil {
+			continue
+		}
+		if fn.Name.Name != "Root" && fn.Name.Name != "RootCmd" {
+			continue
+		}
+		factory = fn
+		break
+	}
+	if factory == nil {
+		return src, false
+	}
+
+	// Find the final `return <ident>` statement in the body. The
+	// canonical instacart shape ends in `return root`; we cover any
+	// identifier returned at the top level of the function body so
+	// `return rootCmd`, `return cmd`, `return c` all work.
+	var returnStmt *ast.ReturnStmt
+	var returnIdent string
+	for i := len(factory.Body.List) - 1; i >= 0; i-- {
+		ret, ok := factory.Body.List[i].(*ast.ReturnStmt)
+		if !ok {
+			continue
+		}
+		if len(ret.Results) != 1 {
+			continue
+		}
+		ident, ok := ret.Results[0].(*ast.Ident)
+		if !ok {
+			continue
+		}
+		returnStmt = ret
+		returnIdent = ident.Name
+		break
+	}
+	if returnStmt == nil || returnIdent == "" {
+		return src, false
+	}
+
+	// Locate the source offset of the return statement so we can
+	// splice immediately before it. Walk back to the line start so
+	// the insertion lands on its own line at the correct indent.
+	retOffset := fset.Position(returnStmt.Pos()).Offset
+	if retOffset <= 0 || retOffset > len(src) {
+		return src, false
+	}
+	lineStart := retOffset
+	for lineStart > 0 && src[lineStart-1] != '\n' {
+		lineStart--
+	}
+	// Detect the indent of the return line so the injected statements
+	// match. The canonical generator template uses a single tab; we
+	// honor whatever the file already uses.
+	indent := ""
+	for i := lineStart; i < retOffset; i++ {
+		if src[i] == ' ' || src[i] == '\t' {
+			indent += string(src[i])
+		} else {
+			break
+		}
+	}
+	if indent == "" {
+		indent = "\t"
+	}
+
+	insertion := fmt.Sprintf(
+		"%slearnCfg := newLearnConfig()\n"+
+			"%svar learnFlags rootFlags\n"+
+			"%s%s.PersistentFlags().BoolVar(&learnFlags.noLearn, \"no-learn\", false, \"Disable the teach/recall learning loop for this invocation\")\n"+
+			"%s%s.AddCommand(newTeachCmd(&learnFlags, learnCfg))\n"+
+			"%s%s.AddCommand(newRecallCmd(&learnFlags, learnCfg))\n"+
+			"%s%s.AddCommand(newLearningsCmd(&learnFlags, learnCfg))\n"+
+			"%s%s.AddCommand(newTeachPatternCmd(&learnFlags))\n"+
+			"%s%s.AddCommand(newTeachLookupCmd(&learnFlags))\n",
+		indent,
+		indent,
+		indent, returnIdent,
+		indent, returnIdent,
+		indent, returnIdent,
+		indent, returnIdent,
+		indent, returnIdent,
+		indent, returnIdent,
+	)
+
+	return src[:lineStart] + insertion + src[lineStart:], true
 }
 
 // injectNoLearnFlagField adds a noLearn bool to the rootFlags struct.

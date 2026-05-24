@@ -81,10 +81,10 @@ CLI errored.
 - No edits under `tools/sweep-canonical/`. The two tools are
   siblings, not chained.
 
-## Recognized but unsupported root shapes
+## Supported root.go shapes
 
-`internal/cli/root.go` ships in three shapes across the library; only
-two are auto-supported by this sweep.
+`internal/cli/root.go` ships in three shapes across the library; the
+sweep auto-supports two and refuses the third.
 
 1. **Canonical struct-based shape.** A package-level
    `type rootFlags struct{}` plus either
@@ -93,15 +93,49 @@ two are auto-supported by this sweep.
    auto-detects which form is in scope and emits the correct
    `&flags` (value) or `flags` (pointer) argument for each
    `new<X>Cmd` constructor call.
-2. **Legacy `var rootCmd`.** Agent-capture-style package-global
-   command with no `rootFlags` struct. The sweep refuses with a
-   "manual review required" diagnostic and continues.
-3. **`func Root() *cobra.Command` factory.** instacart's shape:
-   external factory with no `rootFlags` struct in scope. The sweep
-   refuses with a distinct "recognized but unsupported" diagnostic
-   so operators can route the CLI through a manual retrofit. No
-   detection-side support is planned; per the U14 plan, manual
-   retrofit is the expected path for this shape.
+2. **`func Root() *cobra.Command` factory** (instacart's shape).
+   External factory with no `rootFlags` struct in scope. The sweep
+   patches this shape by emitting a tiny
+   `internal/cli/learn_root_shim.go` carrying the canonical
+   `rootFlags` struct (three booleans: `noLearn`, `dryRun`,
+   `asJSON`) and splicing the `--no-learn` flag binding plus the
+   five `new<X>Cmd` `AddCommand` calls just before the factory's
+   final `return root` statement. Canonical-shape CLIs already
+   declare `rootFlags` in their own `root.go` and do NOT receive
+   the shim; emitting it there would clash.
+3. **Legacy `var rootCmd`.** Agent-capture-style package-global
+   command with no `rootFlags` struct and no factory function.
+   The sweep refuses with a "manual review required" diagnostic
+   and continues.
+
+## Factory-shape root.go support
+
+When the sweep detects the factory shape (`func Root() *cobra.Command`
+or `func RootCmd() *cobra.Command` with no surrounding `rootFlags`
+struct), it takes a slightly different path than the canonical
+sweep:
+
+- `internal/cli/learn_root_shim.go` is **emitted** from
+  `templates/cli/learn_root_shim.go.tmpl`. It declares the same
+  `rootFlags` struct the generator template emits in `root.go` for
+  canonical CLIs, scoped down to the three fields the sweep's
+  `teach.go` reads (`noLearn`, `dryRun`, `asJSON`). Operators are
+  free to extend the struct; the sweep only depends on those three.
+- The factory function's body is **patched in-place**: a
+  `learnCfg := newLearnConfig()` + `var learnFlags rootFlags` pair
+  plus the `--no-learn` `PersistentFlags().BoolVar` binding plus
+  the five `AddCommand` calls splice in just before the factory's
+  final `return <ident>`. The return identifier is detected via
+  AST so `return root`, `return rootCmd`, `return cmd` all work.
+- The shared `learnHookSkipList` map + `shouldSkipLearnHook` helper
+  append at file end identically to the canonical path.
+
+This is idempotent: the second run finds `newTeachCmd(` already
+present in the file and skips the body splice; the shim's identifier
+is `rootFlags` so the canonical detection path also recognizes it as
+"already has a rootFlags struct" and would attempt the canonical
+flow on a re-sweep — but the `newTeachCmd(` probe inside
+`injectLearnAddCommands` short-circuits that case too.
 
 ## Divergence from the generator's `teach.go.tmpl`
 

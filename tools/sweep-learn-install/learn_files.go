@@ -100,6 +100,17 @@ var learnTemplatePaths = map[string]string{
 	"templates/cli/learn_init.go.tmpl": "internal/cli/learn_init.go",
 }
 
+// factoryShapeShimTemplate is the embedded path for the rootFlags
+// compatibility shim emitted only when the host root.go uses the
+// factory shape (instacart's `func Root() *cobra.Command` form).
+// Canonical-shape CLIs already declare a rootFlags struct in their
+// own root.go; emitting the shim there would produce a duplicate-
+// type compile error.
+const (
+	factoryShapeShimTemplate = "templates/cli/learn_root_shim.go.tmpl"
+	factoryShapeShimOutput   = "internal/cli/learn_root_shim.go"
+)
+
 // stubLearnConfig is the renderData.Learn value for the empty-spec
 // case: a learn-enabled CLI whose spec carries no TickerPatterns,
 // Stopwords, or EntityLookupSeeds. With this shape, learn_init.go.tmpl
@@ -135,6 +146,11 @@ type renderData struct {
 // renderLearnPackage emits every learn-package file for one CLI and
 // returns a path->content map ready for write. Module path and year
 // land via the template funcs registered below.
+//
+// When ctx.RootShape is rootShapeFactory the function ALSO emits
+// internal/cli/learn_root_shim.go — the tiny rootFlags struct
+// teach.go references. Canonical-shape CLIs already declare their
+// own rootFlags; emitting the shim there would clash.
 func renderLearnPackage(ctx sweepCtx) (map[string][]byte, error) {
 	out := make(map[string][]byte, len(learnTemplatePaths))
 	for tmplPath, relOut := range learnTemplatePaths {
@@ -143,6 +159,13 @@ func renderLearnPackage(ctx sweepCtx) (map[string][]byte, error) {
 			return nil, fmt.Errorf("render %s: %w", tmplPath, err)
 		}
 		out[relOut] = content
+	}
+	if ctx.RootShape == rootShapeFactory {
+		shim, err := renderLearnTemplate(factoryShapeShimTemplate, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("render %s: %w", factoryShapeShimTemplate, err)
+		}
+		out[factoryShapeShimOutput] = shim
 	}
 	return out, nil
 }

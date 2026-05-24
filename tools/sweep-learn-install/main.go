@@ -261,6 +261,7 @@ func sweepCLI(cliDir string, opts sweepOpts) (sweepStatus, error) {
 	if shape == rootShapeLegacy {
 		return statusSkipped, fmt.Errorf("legacy var rootCmd shape detected: manual review required (see printing-press-library AGENTS.md CLI root.go shape)")
 	}
+	ctx.RootShape = shape
 
 	storePath := filepath.Join(cliDir, "internal", "store", "store.go")
 	storeData, err := os.ReadFile(storePath)
@@ -369,6 +370,12 @@ type sweepCtx struct {
 	Category   string
 	OwnerName  string
 	ModulePath string
+	// RootShape carries the detected internal/cli/root.go shape so the
+	// learn-package emitter can decide whether to ship the rootFlags
+	// shim (factory-shape CLIs only). Zero value (rootShapeUnknown)
+	// means "fall through to the canonical-shape emission path" which
+	// is safe — only the factory branch conditionally emits the shim.
+	RootShape rootShape
 }
 
 // sweepPlan accumulates the planned changes for one CLI before any

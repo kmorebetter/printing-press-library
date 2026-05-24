@@ -374,6 +374,74 @@ func TestRenderLearnPackage_AllFilesPresent(t *testing.T) {
 	}
 }
 
+// TestEmitsLearnRootShim_OnlyForFactoryShape asserts the rootFlags
+// compatibility shim is emitted IFF ctx.RootShape == rootShapeFactory.
+// Canonical-shape CLIs already declare a rootFlags struct in their own
+// root.go; emitting the shim there would cause a duplicate-type
+// compile error.
+func TestEmitsLearnRootShim_OnlyForFactoryShape(t *testing.T) {
+	baseCtx := sweepCtx{
+		CLIName:    "demo-pp-cli",
+		APIName:    "demo",
+		Category:   "other",
+		OwnerName:  "Tester",
+		ModulePath: "github.com/example/demo-pp-cli",
+	}
+
+	t.Run("factory-shape-emits-shim", func(t *testing.T) {
+		ctx := baseCtx
+		ctx.RootShape = rootShapeFactory
+		emitted, err := renderLearnPackage(ctx)
+		if err != nil {
+			t.Fatalf("renderLearnPackage: %v", err)
+		}
+		shim, ok := emitted["internal/cli/learn_root_shim.go"]
+		if !ok {
+			t.Fatal("expected factory-shape emission to include learn_root_shim.go")
+		}
+		// Structural assertions: the shim must declare the rootFlags
+		// struct with the three fields teach.go references.
+		mustContain := []string{
+			"package cli",
+			"type rootFlags struct {",
+			"noLearn bool",
+			"dryRun bool",
+			"asJSON bool",
+		}
+		for _, want := range mustContain {
+			if !strings.Contains(string(shim), want) {
+				t.Errorf("shim missing %q\n--- shim ---\n%s", want, shim)
+			}
+		}
+	})
+
+	t.Run("canonical-shape-skips-shim", func(t *testing.T) {
+		ctx := baseCtx
+		ctx.RootShape = rootShapeFlagsStruct
+		emitted, err := renderLearnPackage(ctx)
+		if err != nil {
+			t.Fatalf("renderLearnPackage: %v", err)
+		}
+		if _, ok := emitted["internal/cli/learn_root_shim.go"]; ok {
+			t.Error("canonical-shape emission must NOT include learn_root_shim.go (would clash with host rootFlags)")
+		}
+	})
+
+	t.Run("unknown-shape-skips-shim", func(t *testing.T) {
+		// Zero-value RootShape (rootShapeUnknown) must be treated as
+		// "no shim" so direct callers that don't thread the shape
+		// (older tests, future call sites) default to the safe path.
+		ctx := baseCtx
+		emitted, err := renderLearnPackage(ctx)
+		if err != nil {
+			t.Fatalf("renderLearnPackage: %v", err)
+		}
+		if _, ok := emitted["internal/cli/learn_root_shim.go"]; ok {
+			t.Error("unknown-shape emission must NOT include learn_root_shim.go by default")
+		}
+	})
+}
+
 // TestRenderLearnPackage_Idempotent runs the renderer twice and
 // asserts identical output. The renderer reads embedded templates and
 // runs gofmt, both of which are pure; this test guards against a
