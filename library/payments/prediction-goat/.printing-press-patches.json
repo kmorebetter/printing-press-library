@@ -314,6 +314,16 @@
         "internal/learn/recipes/extract_test.go"
       ],
       "validated_outcome": "go test ./... passes (634 tests, +3 new across extract_test.go: TestExtract_MultiEntity_NoSingleSlotRecipe (two multi-entity rows in a shared shape do not synthesize a recipe), TestExtract_MultiEntityPoisonsSingleEntityGroup (a multi-entity row that lands in the same structural bucket as two single-entity rows blocks inference for the whole group), TestExtract_SingleEntityPathStillWorks (regression guard: two single-entity teaches in the same shape still produce a country_iso2 substitute recipe with the expected query_template after the slice-signature refactor). All existing recipes tests pass without modification, including TestExtract_KalshiCountryTicker_ExactSubstitute, TestExtract_PolymarketSlug_PrefixSearch, TestExtract_Idempotent, and TestGeneralization_PortugalPlusUSATeachesUnlocksEngland."
+    },
+    {
+      "id": "learn-loop-backport-u5-learning-playbooks-store-layer",
+      "summary": "Add store-layer surface for learning_playbooks: PlaybookRow type, UpsertPlaybookInput struct, UpsertPlaybook (partial-update CASE WHEN semantics + PreserveExistingNotes seed affordance), AppendPlaybookNotes (atomic COALESCE-append under writeMu, fixes the race-condition class Greptile flagged on `playbook amend`), GetPlaybookByFamily (resolves sentinel rows for internal callers), ListPlaybooks (hides `__`-prefixed sentinel rows from agent output).",
+      "reason": "U5 of the ESPN learn-loop backport (docs/plans/2026-05-25-001). The v7 table landed in U1 but no Go surface existed to write or read rows; U5 ports the entire playbooks.go store-layer file from ESPN PR #851 HEAD 9bb0a40a verbatim, adapting only the test-helper name to avoid colliding with the existing internal/store openLearnings helper. Partial-update CASE WHEN semantics preserve unsupplied columns across re-teach (notes-only amend doesn't wipe the choreography, playbook-only re-teach doesn't wipe agent notes). PreserveExistingNotes is the seed-loop affordance for U9's embed-FS install path (binary upgrade with new embedded notes doesn't clobber agent-authored gotchas). AppendPlaybookNotes uses COALESCE(notes_text, '') || ? inside a single transaction under writeMu so 8 concurrent appends never lose a marker. ListPlaybooks filters sentinel rows via `WHERE query_family NOT LIKE '\\_\\_%' ESCAPE '\\'` so the U9 __seed_meta__ version tracker doesn't leak to agent-facing JSON.",
+      "files": [
+        "internal/store/playbooks.go",
+        "internal/store/playbooks_test.go"
+      ],
+      "validated_outcome": "go test ./... passes (649 tests, +15 new across playbooks_test.go: Happy / Idempotent / RejectsEmptyContent / RejectsEmptyFamily / NotesOnly / PartialUpdate / PreserveExistingNotes_Seed / PreserveExistingNotes_EmptyFills / Concurrent (5-way concurrent upsert produces exactly 1 row) / GetPlaybookByFamily_NotFound / AppendPlaybookNotes_InsertsWhenAbsent (leading newlines trimmed on insert) / AppendPlaybookNotes_AppendsToExisting / AppendPlaybookNotes_ConcurrentNoLoss (8 goroutines, all 8 markers survive) / ListPlaybooks_HidesSentinelFamilies / PlaybooksTable_LegacyDBHeal). -race clean on the concurrent-append test."
     }
   ]
 }
