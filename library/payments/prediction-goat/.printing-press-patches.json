@@ -399,6 +399,16 @@
         ".printing-press-patches.json"
       ],
       "validated_outcome": "python3 .github/scripts/verify-skill/verify_skill.py --dir library/payments/prediction-goat/ passes clean (flag-names, flag-commands, positional-args, unknown-command). The new --playbook-file, --notes-file, --add-note, --debug-mismatches flag references all resolve to declarations in internal/cli/teach_playbook.go and existing teach.go. go build / go vet / go test ./... still green at 699/699 (U11 is documentation, no behavior changes)."
+    },
+    {
+      "id": "learn-loop-backport-u12-dogfood-validation",
+      "summary": "Real-binary dogfood + retrospective gating the U1-U11 backport. Fresh-$HOME exercises against 8 distinct queries covering all 3 hand-authored playbook shapes (odds_for_team / event_markets / series_summary), cross-alias hit (Lusitania -> Portugal), similar-shape mismatch (Brazil-recall on Portugal-taught), cold path (dogecoin), ambiguous-alias narrow trigger (Cards->{Arizona, St.Louis} fires; multi-entity Brazil-vs-Portugal does NOT), and end-to-end playbook amend.",
+      "reason": "U12 of the ESPN learn-loop backport (docs/plans/2026-05-25-001). Validation gate after U1-U11 land structural+behavioral changes; confirms every Greptile-found correctness fix (case-1/case-2 same-entity guards, case-insensitive entitySlicesIntersect, atomic AppendPlaybookNotes, ListPlaybooks sentinel filter, ResolveSlots entity-only pool, similar_shape_different_entity envelope warning, ambiguous_alias narrow trigger, embed-FS [amend marker preservation) is exercised end-to-end at the agent surface, not just via the test suite. Retrospective recommendation: ship to PR #780.",
+      "files": [
+        "docs/decisions/2026-05-26-prediction-goat-learn-loop-backport-findings.md",
+        "dogfood-results.json"
+      ],
+      "validated_outcome": "go build ./... clean, go vet ./... clean, go test ./... 699/699 passing. 3/3 hand-authored playbooks attach to their canonical example query (odds_for_team -> 'odds Brazil wins world cup' binds $TEAM=Brazil; event_markets -> 'all sibling markets for the NBA Draft'; series_summary -> 'summarize kalshi series KXMENWORLDCUP'). Cross-alias: 'Lusitania odds world cup' against 'Portugal odds world cup' taught row emits cross_alias_match warning and promotes EntityMatch to Exact. Similar-shape: 'Brazil odds world cup' against Portugal-taught row drops correctly with similar_shape_different_entity:Portugal envelope warning. Ambiguous-alias narrow trigger: Cards->{Arizona Cardinals, St. Louis Cardinals} fires ambiguous_alias; Brazil-vs-Portugal multi-entity does NOT (Greptile round-2 guard confirmed). playbook amend writes [amend 2026-05-26THH:MMZ]: marker visible in playbook list --agent. playbook list returns 4 rows (3 playbooks, event_markets seeds under 2 family keys); sentinel __seed_meta__ correctly hidden."
     }
   ]
 }
