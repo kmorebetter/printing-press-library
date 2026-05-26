@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/mvanhorn/printing-press-library/library/project-management/linear/internal/client"
+	"github.com/mvanhorn/printing-press-library/library/project-management/linear/internal/cliutil"
 	"github.com/mvanhorn/printing-press-library/library/project-management/linear/internal/config"
 	"github.com/mvanhorn/printing-press-library/library/project-management/linear/internal/store"
 )
@@ -176,13 +177,64 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 					}
 
 					// Step 2: Validate credentials with an authenticated probe.
+					// PATCH(doctor-credential-verify): see .printing-press-patches.json.
 					authHeader := cfg.AuthHeader()
-					if authHeader == "" {
-						// No auth configured — skip credential validation
-					} else if reachErr != nil && !errors.As(reachErr, &reachAPIErr) {
+					switch {
+					case authHeader == "":
+						// No auth configured — skip credential validation.
+					case reachErr != nil && !errors.As(reachErr, &reachAPIErr):
 						report["credentials"] = "skipped (API unreachable)"
-					} else {
-						report["credentials"] = "present (not verified — set auth.verify_path in spec for an API acceptance check)"
+					default:
+						var viewer struct {
+							Viewer struct {
+								ID          string `json:"id"`
+								DisplayName string `json:"displayName"`
+							} `json:"viewer"`
+						}
+						probeErr := c.QueryInto(client.ViewerQuery, nil, &viewer)
+						switch {
+						case probeErr == nil && viewer.Viewer.ID != "":
+							who := viewer.Viewer.DisplayName
+							if who == "" {
+								who = viewer.Viewer.ID
+							}
+							// Keep the status string free of user-controlled
+							// text: a displayName like "invalid-bot" would
+							// otherwise hit the keyword scans in the renderer
+							// and doctorExitForFailOn and turn a successful
+							// probe into a red FAIL / non-zero exit. The viewer
+							// identity rides in a separate display-only field.
+							report["credentials"] = "verified"
+							report["viewer"] = who
+						case probeErr != nil && isAuthRejection(probeErr):
+							// "ERROR" prefix drives the FAIL indicator;
+							// "invalid" keyword trips --fail-on=error
+							// (see doctorExitForFailOn's keyword set).
+							report["credentials"] = "ERROR invalid credentials: " + cliutil.SanitizeErrorBody(probeErr.Error())
+						default:
+							// Probe ran but didn't decisively verify or reject —
+							// 5xx, transient transport error, or unexpected shape.
+							// Keep the report string free of the substrings
+							// doctorExitForFailOn treats as error-class
+							// ("error", "invalid", "unreachable", "missing");
+							// a raw probeErr.Error() embedded here would
+							// silently trip --fail-on=error on what is
+							// explicitly an INFO state. Sanitized probe detail
+							// goes to stderr instead so the operator can still
+							// debug without skewing exit codes.
+							if probeErr != nil {
+								fmt.Fprintf(cmd.ErrOrStderr(), "  doctor: credential probe inconclusive: %s\n", cliutil.SanitizeErrorBody(probeErr.Error()))
+							} else {
+								// No transport or GraphQL error, yet viewer.ID is
+								// empty — a well-formed but unreadable envelope
+								// ({"data":null} or an empty viewer object).
+								// Distinguish it from a network failure so the
+								// operator knows the probe completed and the
+								// likely cause is an API shape change.
+								fmt.Fprintln(cmd.ErrOrStderr(), "  doctor: credential probe returned an empty viewer; possible API shape change")
+							}
+							report["credentials"] = "INFO present, probe inconclusive. Run `linear-pp-cli me` to confirm the token works end-to-end."
+						}
 					}
 				}
 			} else if cfg != nil && cfg.BaseURL == "" {
@@ -239,7 +291,13 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 				}
 				fmt.Fprintf(w, "  %s %s: %s\n", indicator, ck.label, s)
 			}
-			// Print info keys without status indicator
+			// Identify the verified account directly under Credentials.
+				// Stored separately from the status string so its free-form
+				// text can't skew the indicator or --fail-on logic.
+				if who, ok := report["viewer"].(string); ok && who != "" {
+					fmt.Fprintf(w, "  viewer: %s\n", who)
+				}
+				// Print info keys without status indicator
 			for _, key := range []string{"config_path", "base_url", "auth_source", "version"} {
 				if v, ok := report[key]; ok {
 					fmt.Fprintf(w, "  %s: %v\n", key, v)
@@ -263,6 +321,39 @@ func newDoctorCmd(flags *rootFlags) *cobra.Command {
 	return cmd
 }
 
+// isAuthRejection reports whether err is a 401/403 APIError or a GraphQL
+// error message that looks auth-related. Linear returns HTTP 200 with an
+// authentication-flavored errors[] payload for bad tokens, so the HTTP
+// status alone isn't enough — graphql.go converts that into a non-APIError
+// wrapped via fmt.Errorf("graphql: ..."), which is the case we run keyword
+// detection against.
+//
+// We deliberately do NOT run keyword detection on 5xx APIErrors. A vendor
+// 5xx page can incidentally mention "token", "key", "credential", or
+// "authentication" (rate-limit prose, internal-service error blurbs, etc.)
+// and would be misclassified as invalid credentials — shifting the doctor's
+// wrongness from "WARN with bad hint" (the pre-patch behavior) to "FAIL
+// with wrong cause" (worse). 5xx falls through to the INFO probe-failed
+// branch instead, which is honest about the ambiguity.
+func isAuthRejection(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr *client.APIError
+	if errors.As(err, &apiErr) {
+		switch {
+		case apiErr.StatusCode == 401 || apiErr.StatusCode == 403:
+			return true
+		case apiErr.StatusCode >= 500:
+			// Server-side failure; don't keyword-grep the body.
+			return false
+		}
+		// Other 4xx: fall through to keyword check on a 4xx that wasn't
+		// 401/403 (some APIs return 400 with an auth-error envelope).
+	}
+	return cliutil.LooksLikeAuthError(err.Error())
+}
+
 // doctorExitForFailOn returns a non-nil error when the report's worst
 // status meets or exceeds the --fail-on threshold. "error" always trips
 // when any section reports an error; "stale" also trips when the cache
@@ -273,19 +364,26 @@ func doctorExitForFailOn(failOn string, report map[string]any) error {
 	}
 	worstError := false
 	worstStale := false
-	for _, v := range report {
-		s, ok := v.(string)
-		if ok {
-			if strings.Contains(s, "error") || strings.Contains(s, "unreachable") || strings.Contains(s, "invalid") || strings.Contains(s, "missing") {
-				worstError = true
-			}
+	// Only the status-bearing keys encode severity in their text. Other
+	// report entries (config_path, base_url, viewer, auth_source, version)
+	// hold free-form or user-controlled values — keyword-scanning them would
+	// let a viewer displayName like "invalid-bot" or a path containing
+	// "error" trip a false failure on an otherwise-healthy report.
+	for _, k := range []string{"config", "auth", "env_vars", "api", "credentials"} {
+		s, ok := report[k].(string)
+		if !ok {
+			continue
 		}
-		if m, ok := v.(map[string]any); ok {
-			if st, _ := m["status"].(string); st == "error" {
-				worstError = true
-			} else if st == "stale" {
-				worstStale = true
-			}
+		if strings.Contains(s, "error") || strings.Contains(s, "unreachable") || strings.Contains(s, "invalid") || strings.Contains(s, "missing") {
+			worstError = true
+		}
+	}
+	// Cache health is a structured map with an explicit status field.
+	if m, ok := report["cache"].(map[string]any); ok {
+		if st, _ := m["status"].(string); st == "error" {
+			worstError = true
+		} else if st == "stale" {
+			worstStale = true
 		}
 	}
 	switch failOn {
