@@ -81,6 +81,16 @@ func openRecallCanonicalDB(t *testing.T) *sql.DB {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (kind, canonical, value)
 		)`,
+		`CREATE TABLE learning_playbooks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			query_family TEXT NOT NULL UNIQUE,
+			playbook_json TEXT,
+			notes_text TEXT,
+			source TEXT NOT NULL,
+			confidence INTEGER NOT NULL DEFAULT 2,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_observed_at DATETIME
+		)`,
 	} {
 		if _, err := db.Exec(q); err != nil {
 			t.Fatalf("schema: %v", err)
@@ -447,5 +457,216 @@ func TestRecall_LegacyNullEntityRow_OpportunisticBackfill(t *testing.T) {
 	}
 	if stored.Valid && stored.String != "" && stored.String != "null" {
 		t.Errorf("backfill should be read-only; stored column got modified to %q", stored.String)
+	}
+}
+
+// seedPlaybookRow inserts a learning_playbooks row directly via SQL.
+// Keeps the playbook-envelope tests decoupled from the store wrapper —
+// the recall path queries the underlying *sql.DB directly.
+func seedPlaybookRow(t *testing.T, db *sql.DB, family, playbookJSON, notes string) {
+	t.Helper()
+	if _, err := db.Exec(
+		`INSERT INTO learning_playbooks (query_family, playbook_json, notes_text, source, confidence)
+		 VALUES (?, ?, ?, 'taught', 2)`,
+		family, playbookJSON, notes,
+	); err != nil {
+		t.Fatalf("seed playbook: %v", err)
+	}
+}
+
+// TestRecall_PlaybookSurfaces_OnFamilyMatch covers U7's primary
+// contract: a query whose QueryFamily matches a stored
+// learning_playbooks row carries the resolved playbook + notes on the
+// recall envelope. Empty results list is fine — playbooks live on the
+// envelope orthogonally to per-resource hits.
+func TestRecall_PlaybookSurfaces_OnFamilyMatch(t *testing.T) {
+	t.Parallel()
+	db := openRecallCanonicalDB(t)
+	seedCanonical(t, db, "country", "Portugal", []string{"Portugal", "PT"})
+
+	query := "odds Portugal wins world cup"
+	family := QueryFamily(PromoteEntities(
+		Normalize(query, DefaultPredictionGoatConfig()),
+		NewCanonicalResolver(context.Background(), db),
+	))
+	if family == "" {
+		t.Fatalf("expected non-empty family for query %q", query)
+	}
+	playbookJSON := `{
+		"query_family_examples": ["odds Portugal wins world cup"],
+		"entity_slots": ["$COUNTRY"],
+		"expected_tool_calls": 2,
+		"steps": [
+			{"cmd": "prediction-goat-pp-cli events list --query {$COUNTRY.canonical}", "purpose": "find event"}
+		]
+	}`
+	seedPlaybookRow(t, db, family, playbookJSON,
+		"World Cup markets sometimes use the parent ticker; always check children.\n")
+
+	got, err := Recall(context.Background(), db, query, Opts{})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	if got.Playbook == nil {
+		t.Fatalf("want Playbook on envelope; got nil. Result=%+v", got)
+	}
+	if got.Playbook.QueryFamily != family {
+		t.Errorf("Playbook.QueryFamily = %q, want %q", got.Playbook.QueryFamily, family)
+	}
+	if len(got.Playbook.Playbook.Steps) == 0 {
+		t.Errorf("want >=1 step on playbook; got 0")
+	}
+	if got.Notes == "" {
+		t.Errorf("want non-empty Notes on envelope; got empty")
+	}
+	if got.Playbook.SlotsResolved["$COUNTRY"] == nil {
+		t.Errorf("want $COUNTRY slot resolved; got SlotsResolved=%v", got.Playbook.SlotsResolved)
+	}
+}
+
+// TestRecall_PlaybookSurfaces_DifferentEntitySameFamily is the killer-
+// feature test. A playbook seeded for one country ("Portugal") is
+// retrieved by a structurally-identical query for a different country
+// ("Brazil"). The family key is entity-stripped, so the lookup hits;
+// slot resolution then binds $COUNTRY to Brazil's canonical via the
+// per-call resolver. Demonstrates playbooks are entity-agnostic at the
+// slot-binding layer — one author lift, infinite-entity replay.
+func TestRecall_PlaybookSurfaces_DifferentEntitySameFamily(t *testing.T) {
+	t.Parallel()
+	db := openRecallCanonicalDB(t)
+	seedCanonical(t, db, "country", "Portugal", []string{"Portugal", "PT"})
+	seedCanonical(t, db, "country", "Brazil", []string{"Brazil", "BR"})
+
+	// Teach the playbook against the Portugal query.
+	portugalQuery := "odds Portugal wins world cup"
+	family := QueryFamily(PromoteEntities(
+		Normalize(portugalQuery, DefaultPredictionGoatConfig()),
+		NewCanonicalResolver(context.Background(), db),
+	))
+	playbookJSON := `{
+		"query_family_examples": ["odds Portugal wins world cup"],
+		"entity_slots": ["$COUNTRY"],
+		"expected_tool_calls": 2,
+		"steps": [
+			{"cmd": "prediction-goat-pp-cli events list --query {$COUNTRY.canonical}"}
+		]
+	}`
+	seedPlaybookRow(t, db, family, playbookJSON, "Endpoint envelope varies by venue.\n")
+
+	// Brazil query MUST hit the same playbook.
+	got, err := Recall(context.Background(), db, "odds Brazil wins world cup", Opts{})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	if got.Playbook == nil {
+		t.Fatalf("cross-entity replay failed: want Playbook on envelope, got nil. Result=%+v", got)
+	}
+	if got.Playbook.QueryFamily != family {
+		t.Errorf("Playbook.QueryFamily = %q, want %q", got.Playbook.QueryFamily, family)
+	}
+	// Slot must bind to Brazil's canonical, not Portugal's.
+	slot := got.Playbook.SlotsResolved["$COUNTRY"]
+	if slot == nil {
+		t.Fatalf("want $COUNTRY slot resolved on Brazil query; got SlotsResolved=%v",
+			got.Playbook.SlotsResolved)
+	}
+	if got, ok := slot["canonical"].(string); !ok || got != "Brazil" {
+		t.Errorf("$COUNTRY.canonical = %v, want Brazil (slot must bind to query entity, not playbook author's)", slot)
+	}
+}
+
+// TestRecall_PlaybookAbsent_NoMatch covers the negative case: a
+// query whose family has no stored playbook returns envelope.Playbook
+// = nil and no error. Notes also empty.
+func TestRecall_PlaybookAbsent_NoMatch(t *testing.T) {
+	t.Parallel()
+	db := openRecallCanonicalDB(t)
+	// No playbook rows seeded.
+	got, err := Recall(context.Background(), db, "some unrelated query", Opts{})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	if got.Playbook != nil {
+		t.Errorf("want envelope.Playbook = nil when family has no row; got %+v", got.Playbook)
+	}
+	if got.Notes != "" {
+		t.Errorf("want envelope.Notes empty; got %q", got.Notes)
+	}
+}
+
+// TestRecall_PlaybookNotesOnly covers the notes-only row: a stored
+// playbook with empty playbook_json but populated notes_text surfaces
+// Notes on the envelope; the Playbook wrapper is still attached so the
+// agent gets the guidance even without structured choreography. The
+// embedded Playbook value has zero steps (matching ESPN's behavior).
+func TestRecall_PlaybookNotesOnly(t *testing.T) {
+	t.Parallel()
+	db := openRecallCanonicalDB(t)
+	query := "world cup parent ticker workaround"
+	family := QueryFamily(PromoteEntities(
+		Normalize(query, DefaultPredictionGoatConfig()),
+		NewCanonicalResolver(context.Background(), db),
+	))
+	notes := "Kalshi parent tickers don't carry per-team odds; always drill to children.\n"
+	seedPlaybookRow(t, db, family, "", notes)
+
+	got, err := Recall(context.Background(), db, query, Opts{})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	if got.Notes != notes {
+		t.Errorf("Notes = %q, want %q", got.Notes, notes)
+	}
+	if got.Playbook == nil {
+		t.Fatalf("notes-only row should still attach Playbook wrapper carrying the notes; got nil")
+	}
+	if len(got.Playbook.Playbook.Steps) != 0 {
+		t.Errorf("notes-only row should have zero steps; got %d", len(got.Playbook.Playbook.Steps))
+	}
+	if got.Playbook.Notes != notes {
+		t.Errorf("ResolvedPlaybook.Notes = %q, want %q", got.Playbook.Notes, notes)
+	}
+}
+
+// TestRecall_PlaybookCoexistsWithResourceHit confirms playbooks land
+// on the envelope orthogonally to per-resource hits. A query that hits
+// both a search_learnings row AND has a stored playbook for its family
+// returns both surfaces populated.
+func TestRecall_PlaybookCoexistsWithResourceHit(t *testing.T) {
+	t.Parallel()
+	db := openRecallCanonicalDB(t)
+	seedCanonical(t, db, "country", "Portugal", []string{"Portugal", "PT"})
+
+	query := "odds Portugal wins world cup"
+	// Seed a direct learning that matches.
+	seedCanonicalLearning(t, db, "cup portugal world", `["Portugal"]`,
+		"KXMENWORLDCUP-26-PT", "kalshi_markets")
+	// Seed a playbook for the same family.
+	family := QueryFamily(PromoteEntities(
+		Normalize(query, DefaultPredictionGoatConfig()),
+		NewCanonicalResolver(context.Background(), db),
+	))
+	playbookJSON := `{
+		"query_family_examples": ["odds Portugal wins world cup"],
+		"entity_slots": ["$COUNTRY"],
+		"steps": [{"cmd": "prediction-goat-pp-cli markets get KXMENWORLDCUP-26-{$COUNTRY.canonical}"}]
+	}`
+	seedPlaybookRow(t, db, family, playbookJSON, "Drill to child ticker.\n")
+
+	got, err := Recall(context.Background(), db, query, Opts{})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	if !got.Found {
+		t.Errorf("want Found=true (direct learning hit); got Result=%+v", got)
+	}
+	if len(got.Results) == 0 {
+		t.Errorf("want >=1 result from search_learnings; got 0")
+	}
+	if got.Playbook == nil {
+		t.Errorf("want envelope.Playbook attached alongside results; got nil")
+	}
+	if got.Notes == "" {
+		t.Errorf("want envelope.Notes populated alongside results; got empty")
 	}
 }

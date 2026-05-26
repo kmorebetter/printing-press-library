@@ -310,14 +310,16 @@ Disabling: pass --no-learn or set PREDICTION_GOAT_NO_LEARN=true.`,
 // {found, query, normalized, match_score, results[*].{resource_id,
 // confidence, source, last_observed_at}} continue to work.
 type recallEnvelope struct {
-	Found         bool                   `json:"found"`
-	Query         string                 `json:"query"`
-	Normalized    string                 `json:"normalized"`
-	QueryEntities []string               `json:"query_entities"`
-	MatchScore    float64                `json:"match_score,omitempty"`
-	Results       []recallEnvelopeResult `json:"results"`
-	Mismatches    []recallEnvelopeResult `json:"mismatches,omitempty"`
-	Warnings      []string               `json:"warnings,omitempty"`
+	Found         bool                    `json:"found"`
+	Query         string                  `json:"query"`
+	Normalized    string                  `json:"normalized"`
+	QueryEntities []string                `json:"query_entities"`
+	MatchScore    float64                 `json:"match_score,omitempty"`
+	Results       []recallEnvelopeResult  `json:"results"`
+	Mismatches    []recallEnvelopeResult  `json:"mismatches,omitempty"`
+	Warnings      []string                `json:"warnings,omitempty"`
+	Playbook      *learn.ResolvedPlaybook `json:"playbook,omitempty"`
+	Notes         string                  `json:"notes,omitempty"`
 }
 
 type recallEnvelopeResult struct {
@@ -422,6 +424,11 @@ when learnings exist.`,
 				envelope.Mismatches = toEnvelopeResults(result.Mismatches)
 			}
 			envelope.Warnings = result.Warnings
+			// U7 backport: surface the playbook + notes when the query
+			// family matches a stored learning_playbooks row. The agent
+			// reads playbook.steps and notes before any discovery call.
+			envelope.Playbook = result.Playbook
+			envelope.Notes = result.Notes
 			return emitRecall(cmd, flags, envelope)
 		},
 	}

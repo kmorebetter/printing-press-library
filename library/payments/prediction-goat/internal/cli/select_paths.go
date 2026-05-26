@@ -224,6 +224,8 @@ var commandSelectPaths = map[string][]string{
 		"mismatches.venue",
 		"mismatches.warnings",
 		"normalized",
+		"notes",
+		"playbook",
 		"query",
 		"query_entities",
 		"results",

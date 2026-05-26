@@ -334,6 +334,18 @@
         "internal/learn/playbooks_test.go"
       ],
       "validated_outcome": "go test ./... passes (662 tests, +13 new across playbooks_test.go: ParsePlaybook_HappyPath / ParsePlaybookFile_HappyPath / ParsePlaybookFile_NonExistent / ParsePlaybook_Malformed / ParsePlaybook_Empty / MarshalPlaybook_RoundTrip (full field-by-field) / QueryFamily_UsesNonEntityNormalized / ResolveSlots_SingleEntity (Portugal→Portugal canonical) / ResolveSlots_MultiEntity ($A + $B distinct tokens) / ResolveSlots_UnresolvableSkipped / ResolveSlots_EmptySlots / ResolveSlots_OnlyConsidersEntities (Greptile round 3 F2: 'ppg' aliased in entity_lookups loses to real 'portugal' entity) / ResolveSlots_NilResolver). go vet ./... clean. go build ./... clean."
+    },
+    {
+      "id": "learn-loop-backport-u7-recall-envelope-playbook-surface",
+      "summary": "Recall envelope attaches Playbook (ResolvedPlaybook with ParsePlaybook + ResolveSlots output) and Notes (verbatim notes_text) when the query's QueryFamily matches a learning_playbooks row; surfaces both in agent-mode JSON via the recallEnvelope in teach.go. Notes-only rows (empty playbook_json) still attach the Playbook wrapper carrying Notes so guidance lands even without structured choreography. Lookup is a single SELECT by query_family; sql.ErrNoRows and other DB errors fall through silently per the legacy contract that recall doesn't fail when an optional table is absent. Generator-regenerated internal/cli/select_paths.go to surface the new envelope fields under recall's --select cheatsheet.",
+      "reason": "U7 of the ESPN learn-loop backport (docs/plans/2026-05-25-001). U6 landed Playbook types + ResolveSlots; this unit finishes the read-side composition: recall's structurally-keyed lookup attaches the playbook on every query whose family matches, regardless of whether per-resource hits exist. Critical for the cross-entity replay killer-feature: an author writes one playbook ('odds Portugal wins world cup') and every structurally-identical query for a different country ('odds Brazil wins world cup') retrieves it via the entity-stripped family key with $COUNTRY bound to the query's canonical, not the author's. Ported from ESPN PR #851 HEAD 9bb0a40a (library/media-and-entertainment/espn/internal/learn/recall.go envelope-build section at end of Recall()), with the prediction-goat adaptations: ResolvedPlaybook field order matches prediction-goat's playbooks.go (Playbook value, not pointer), JSON tag names match ESPN exactly so agent-mode output stays consistent across the two CLIs.",
+      "files": [
+        "internal/learn/recall.go",
+        "internal/learn/recall_canonical_test.go",
+        "internal/cli/teach.go",
+        "internal/cli/select_paths.go"
+      ],
+      "validated_outcome": "go test ./... passes (667 tests, +5 new across recall_canonical_test.go: TestRecall_PlaybookSurfaces_OnFamilyMatch / TestRecall_PlaybookSurfaces_DifferentEntitySameFamily (KILLER FEATURE: Portugal-authored playbook hits on Brazil query with $COUNTRY canonical = Brazil) / TestRecall_PlaybookAbsent_NoMatch / TestRecall_PlaybookNotesOnly (empty playbook_json, populated notes_text → Notes attached, zero-step Playbook wrapper) / TestRecall_PlaybookCoexistsWithResourceHit (search_learnings hit + playbook for same family both surface)). go vet ./... clean. go build ./... clean. Smoke test: real binary `go run ./cmd/prediction-goat-pp-cli recall '<query>' --agent` omits playbook+notes fields when no row exists (omitempty)."
     }
   ]
 }
