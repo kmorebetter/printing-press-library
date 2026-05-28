@@ -1520,8 +1520,10 @@ type backfillResult struct {
 // not a GitHub noreply address. Deliberately tiny — anyone not here whose email
 // isn't a noreply address is reported as unresolved rather than guessed.
 var knownHandleByName = map[string]string{
-	"Matt Van Horn": "mvanhorn",
-	"Trevin Chow":   "tmchow",
+	"Matt Van Horn":  "mvanhorn",
+	"Trevin Chow":    "tmchow",
+	"Benjamin":       "benjaminn8",
+	"Benjamin Huang": "benjaminn8",
 }
 
 // landingOnlyHandles are identities whose git presence across a CLI directory
