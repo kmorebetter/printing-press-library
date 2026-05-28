@@ -166,7 +166,7 @@ func newRunCmd(flags *rootFlags) *cobra.Command {
 				return apiErr(fmt.Errorf("prediction finished with status %q", status))
 			}
 			if cmd.Flags().Changed("download") {
-				downloads, err := downloadRunOutputs(cmd.Context(), c, unwrapWaveSpeedData(result), downloadSpec)
+				downloads, err := downloadPlannedRunOutputs(cmd.Context(), c, plannedDownloads)
 				for _, item := range downloads {
 					fmt.Fprintf(cmd.ErrOrStderr(), "downloaded %s\n", item.Path)
 				}
@@ -1442,7 +1442,10 @@ type downloadedFile struct {
 }
 
 func downloadRunOutputs(ctx context.Context, c *client.Client, data json.RawMessage, spec string) ([]downloadedFile, error) {
-	planned := planRunDownloads(data, spec)
+	return downloadPlannedRunOutputs(ctx, c, planRunDownloads(data, spec))
+}
+
+func downloadPlannedRunOutputs(ctx context.Context, c *client.Client, planned []downloadedFile) ([]downloadedFile, error) {
 	downloads := make([]downloadedFile, 0, len(planned))
 	for _, item := range planned {
 		rawURL := item.URL
