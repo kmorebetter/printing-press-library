@@ -1792,3 +1792,44 @@ func defaultDBPath(name string) string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".local", "share", name, "data.db")
 }
+
+const wavespeedDataDir = "wavespeed-pp-cli"
+
+// archiveDBPath returns the path to the archive (sync-cache) SQLite database.
+//
+// History: the archive DB was originally named data.db. It is now archive.db,
+// living alongside the new library.db. On first run we rename a legacy data.db
+// (and its WAL/SHM sidecars) to archive.db so existing users keep their synced
+// cache. WAVESPEED_ARCHIVE_DB overrides the path entirely (no rename applied to
+// an explicit path).
+func archiveDBPath() string {
+	if env := strings.TrimSpace(os.Getenv("WAVESPEED_ARCHIVE_DB")); env != "" {
+		return env
+	}
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".local", "share", wavespeedDataDir)
+	archive := filepath.Join(dir, "archive.db")
+	legacy := filepath.Join(dir, "data.db")
+	if _, err := os.Stat(archive); os.IsNotExist(err) {
+		if _, err := os.Stat(legacy); err == nil {
+			// Best-effort migration: a failure leaves data.db in place and
+			// the next open simply creates a fresh archive.db, so we never
+			// block on a rename error.
+			for _, suffix := range []string{"", "-wal", "-shm"} {
+				_ = os.Rename(legacy+suffix, archive+suffix)
+			}
+		}
+	}
+	return archive
+}
+
+// libraryDBPath returns the path to the library (D2C content-production)
+// SQLite database. It is always greenfield — there is no legacy file to
+// migrate. WAVESPEED_LIBRARY_DB overrides the path.
+func libraryDBPath() string {
+	if env := strings.TrimSpace(os.Getenv("WAVESPEED_LIBRARY_DB")); env != "" {
+		return env
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".local", "share", wavespeedDataDir, "library.db")
+}

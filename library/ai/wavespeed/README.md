@@ -55,6 +55,7 @@ This installs the CLI only — no skill.
 Download a pre-built binary for your platform from the [latest release](https://github.com/mvanhorn/printing-press-library/releases/tag/wavespeed-current). On macOS, clear the Gatekeeper quarantine: `xattr -d com.apple.quarantine <binary>`. On Unix, mark it executable: `chmod +x <binary>`.
 
 <!-- pp-hermes-install-anchor -->
+
 ## Install for Hermes
 
 From the Hermes CLI:
@@ -93,7 +94,6 @@ Requires Claude Desktop 1.0.0 or later. Pre-built bundles ship for macOS Apple S
 <summary>Manual JSON config (advanced)</summary>
 
 If you can't use the MCPB bundle (older Claude Desktop, unsupported platform), install the MCP binary and configure it manually.
-
 
 ```bash
 go install github.com/mvanhorn/printing-press-library/library/ai/wavespeed/cmd/wavespeed-pp-mcp@latest
@@ -213,6 +213,42 @@ Manage usage stats
 
 - **`wavespeed-pp-cli usage-stats`** - Retrieve usage statistics for the authenticated account.
 
+## Novel commands / Workflows (D2C content production)
+
+A content-production layer for D2C brands posting to social (Instagram, TikTok,
+Facebook, X). It is **produce-only**: it emits post-ready files plus a
+per-platform `manifest.json` a downstream social-posting tool consumes. Every
+novel command emits a uniform agent envelope and supports `--dry-run`. Novel
+commands record each generation to a local library DB by default (`--no-record`
+to opt out); a record failure surfaces in `library_record_errors` and never
+fails a generation.
+
+**Plan** — shape work before producing it:
+
+```bash
+wavespeed-pp-cli plan brief-to-shotlist --prompt "Helm Black launch" --platforms instagram,tiktok
+wavespeed-pp-cli plan model-pick "short product video"
+wavespeed-pp-cli plan cost-estimate shotlist.json
+```
+
+**Produce** — generate assets:
+
+```bash
+wavespeed-pp-cli pack --concept "Helm Black hero" --platforms instagram,tiktok --max-cost 5.00
+wavespeed-pp-cli batch --from prompts.csv --max-cost 5.00
+wavespeed-pp-cli variants --base shotlist.json --vary seed --count 4
+wavespeed-pp-cli compose --steps "text->image,image->video" --prompt "..." --models m1,m2
+```
+
+**Refine** — `aspects <image>` re-frames to platform ratios; `restyle <image> --brand helm` applies a brand/style.
+
+**Library** — `library list|search|show|tag|export|cost-report` query the recorded generation history.
+
+**QA** — `qa preflight <shotlist.json>` runs pass/warn/fail checks (balance vs cost, model availability, prompt safety, platform request-shape, brand coverage).
+
+**Brand** — `brand init|show|list|apply|edit` manage brand profiles that auto-merge into pack, compose, variants, restyle, and (via `brand apply`) run.
+
+Full agent chain: `brand apply → plan brief-to-shotlist → plan cost-estimate → qa preflight → pack`, piping JSON between steps.
 
 ## Output Formats
 
@@ -268,19 +304,21 @@ Static request headers can be configured under `headers`; per-command header ove
 
 Environment variables:
 
-| Name | Kind | Required | Description |
-| --- | --- | --- | --- |
-| `WAVESPEED_API_KEY` | per_call | Yes | Set to your API credential. |
+| Name                | Kind     | Required | Description                 |
+| ------------------- | -------- | -------- | --------------------------- |
+| `WAVESPEED_API_KEY` | per_call | Yes      | Set to your API credential. |
 
 ### agentcookie (optional)
 
 If you use agentcookie to sync secrets across machines, this CLI auto-adopts agentcookie-managed credentials with no extra setup. When the daemon writes to this CLI's config, `wavespeed-pp-cli doctor` reports `agentcookie: detected` and `auth-status` labels the source as `agentcookie`. Skip this section if you don't use agentcookie - the CLI works the same as any other.
 
 ## Troubleshooting
+
 **Authentication errors (exit code 4)**
+
 - Run `wavespeed-pp-cli doctor` to check credentials
 - Verify the environment variable is set: `echo $WAVESPEED_API_KEY`
-**Not found errors (exit code 3)**
+  **Not found errors (exit code 3)**
 - Check the resource ID is correct
 - Run the `list` command to see available items
 

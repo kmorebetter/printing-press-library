@@ -59,6 +59,66 @@
       "name": "Project aliases",
       "command": "aliases",
       "description": "Read wavespeed.json aliases, default model, and output directory settings for repeatable local workflows."
+    },
+    {
+      "name": "Brief-to-shotlist planner",
+      "command": "plan brief-to-shotlist",
+      "description": "Turn a free-text brief into a structured shotlist with a hybrid deterministic-parser/LLM planner across platforms and aspect ratios."
+    },
+    {
+      "name": "Model pick",
+      "command": "plan model-pick",
+      "description": "Recommend a model for an intent from the live catalog with rationale."
+    },
+    {
+      "name": "Cost estimate",
+      "command": "plan cost-estimate",
+      "description": "Price a shotlist against live /model/pricing and the account balance, with cached-pricing fallback and per-shot breakdown."
+    },
+    {
+      "name": "Multi-platform pack",
+      "command": "pack",
+      "description": "Produce a multi-platform creative pack from one concept at stable packs/<slug>/<platform>/ paths with per-platform manifests, concurrency, cost ceiling, and stdlib image-dimension validation."
+    },
+    {
+      "name": "Batch producer",
+      "command": "batch",
+      "description": "Submit many prompts from CSV or JSON with a spend ceiling and fail-fast/fail-tolerant semantics; records completed generations before any abort."
+    },
+    {
+      "name": "Controlled variants",
+      "command": "variants",
+      "description": "Sweep seed, style, or model off a base shot to produce comparable outputs with side-by-side metadata."
+    },
+    {
+      "name": "Pipeline compose",
+      "command": "compose",
+      "description": "Run an explicit multi-step pipeline (text->image->upscale->video), feeding each step's output to the next, with rollback of later steps on failure."
+    },
+    {
+      "name": "Aspect re-framing",
+      "command": "aspects",
+      "description": "Re-frame one image into standard platform aspect ratios, using outpaint when supported and falling back to an anchored re-render otherwise."
+    },
+    {
+      "name": "Brand restyle",
+      "command": "restyle",
+      "description": "Apply a brand profile or explicit style to an existing asset via img2img with a style prompt."
+    },
+    {
+      "name": "Generation library",
+      "command": "library",
+      "description": "List, search (FTS5), show, tag, export, and cost-report the local generation library by brand, model, platform, and tag."
+    },
+    {
+      "name": "Production QA preflight",
+      "command": "qa preflight",
+      "description": "Pass/warn/fail validation of a shotlist: balance vs cost, model availability, prompt safety, platform request-shape, and brand coverage."
+    },
+    {
+      "name": "Brand profiles",
+      "command": "brand",
+      "description": "Create, inspect, apply, and edit brand profiles that auto-merge into pack, compose, variants, restyle, and run."
     }
   ]
 }

@@ -89,6 +89,58 @@ correctly percent-encode slashes. The printed CLI adds a hand-authored
 
 - `wavespeed-pp-cli usage-stats` — Retrieve usage statistics for the authenticated account.
 
+## Novel commands / Workflows (D2C content production)
+
+WaveSpeed ships a content-production layer for D2C brands posting to social
+(Instagram, TikTok, Facebook, X). It is **produce-only**: it emits post-ready
+files plus a per-platform `manifest.json` a downstream social-posting tool
+consumes. Every novel command emits a uniform agent envelope
+(`command`, `results`, `suggested_next`, `recommended_action`,
+`cost_spent`, `library_record_errors`, `partial_failure`) and supports
+`--dry-run` to preview planned files, costs, and merged params without spending.
+
+Novel commands record each generation to a local library DB by default; pass
+`--no-record` to opt out. Plain `run` does the inverse — pass `--record` to
+record it. A library write failure is logged and surfaced in
+`library_record_errors`; it never fails a successful generation.
+
+**Plan**
+
+- `wavespeed-pp-cli plan brief-to-shotlist --prompt "<brief>" --platforms instagram,tiktok` — turn a brief into a structured shotlist. Hybrid planner: `--planner deterministic|llm|auto` (default `auto`), with an LLM fallback via `--planner-model <id>`. `--aspects` and `--from-file` are also accepted.
+- `wavespeed-pp-cli plan model-pick <intent>` — recommend a model for an intent from the live catalog.
+- `wavespeed-pp-cli plan cost-estimate <shotlist.json>` — price a shotlist against `/model/pricing` and your balance.
+
+**Produce**
+
+- `wavespeed-pp-cli pack --concept "<concept>" --platforms instagram,tiktok` — multi-platform pack at stable `packs/<slug>/<platform>/` paths with a per-platform manifest. Flags: `--aspects`, `--concurrency`, `--max-cost`, `--on-failure abort|continue`, `--history`, `--clean`, `--strict-video`, `--model`, `--brand`, `--seed`, `--out-dir`.
+- `wavespeed-pp-cli batch --from shots.csv --max-cost 5.00` — submit many prompts from CSV/JSON. `--fail-tolerant` (default fail-fast), `--concurrency`, `--model`, `--brand`.
+- `wavespeed-pp-cli variants --base shotlist.json --vary seed --count 4` — controlled sweep (`--vary seed|style|model`, `--values`).
+- `wavespeed-pp-cli compose --steps "text->image,image->video" --prompt "..." --models m1,m2` — explicit step pipeline; a failed step rolls back later steps.
+
+**Refine**
+
+- `wavespeed-pp-cli aspects <image> --platforms instagram,tiktok` — re-frame one image to target ratios (`--aspects`, `--outpaint`, `--prompt`, `--model`).
+- `wavespeed-pp-cli restyle <image> --brand helm` — apply a brand/style (`--style`, `--model`).
+
+**Library**
+
+- `wavespeed-pp-cli library list --brand helm --platform instagram --since 30d` — list recorded generations (`--model`, `--tag`, `--limit`).
+- `wavespeed-pp-cli library search "<query>"` — FTS5 prompt search (`--limit`).
+- `wavespeed-pp-cli library show <id>` — one generation with its tags.
+- `wavespeed-pp-cli library tag <id> --add hero --remove draft` — tag management.
+- `wavespeed-pp-cli library export <dir>` — export matching generations as JSON.
+- `wavespeed-pp-cli library cost-report --since 30d --group-by brand` — cost rollup (`--group-by brand|model|platform|tag`).
+
+**QA**
+
+- `wavespeed-pp-cli qa preflight <shotlist.json>` — pass/warn/fail checks (balance vs cost, model availability, prompt safety, platform request-shape, brand coverage).
+
+**Brand**
+
+- `wavespeed-pp-cli brand init <name> --from-file brand.json` — create a profile (or use field flags: `--style-anchors`, `--negative`, `--palette`, `--voice`, `--models`, `--platforms`). Non-interactive by default.
+- `wavespeed-pp-cli brand show <name>`, `brand list`, `brand apply <name>` (sets the active brand in `wavespeed.json`), `brand edit <name>`.
+
+A full agent chain: `brand apply → plan brief-to-shotlist → plan cost-estimate → qa preflight → pack`, piping JSON between steps.
 
 ### Finding the right command
 
@@ -101,6 +153,7 @@ wavespeed-pp-cli which "<capability in your own words>"
 `which` resolves a natural-language capability query to the best matching command from this CLI's curated feature index. Exit code `0` means at least one match; exit code `2` means no confident match — fall back to `--help` or use a narrower query.
 
 ## Auth Setup
+
 Run `wavespeed-pp-cli auth setup` to print the URL and steps for getting a key (add `--launch` to open the URL). Then set:
 
 ```bash
@@ -121,6 +174,7 @@ Add `--agent` to any command. Expands to: `--json --compact --no-input --no-colo
   ```bash
   wavespeed-pp-cli billings --agent --select id,name,status
   ```
+
 - **Previewable** — `--dry-run` shows the request without sending
 - **Offline-friendly** — sync/search commands can use the local SQLite store when available
 - **Non-interactive** — never prompts, every input is a flag
@@ -151,16 +205,16 @@ wavespeed-pp-cli feedback list --json --limit 10
 
 Entries are stored locally at `~/.local/share/wavespeed-pp-cli/feedback.jsonl`. They are never POSTed unless `WAVESPEED_FEEDBACK_ENDPOINT` is set AND either `--send` is passed or `WAVESPEED_FEEDBACK_AUTO_SEND=true`. Default behavior is local-only.
 
-Write what *surprised* you, not a bug report. Short, specific, one line: that is the part that compounds.
+Write what _surprised_ you, not a bug report. Short, specific, one line: that is the part that compounds.
 
 ## Output Delivery
 
 Every command accepts `--deliver <sink>`. The output goes to the named sink in addition to (or instead of) stdout, so agents can route command results without hand-piping. Three sinks are supported:
 
-| Sink | Effect |
-|------|--------|
-| `stdout` | Default; write to stdout only |
-| `file:<path>` | Atomically write output to `<path>` (tmp + rename) |
+| Sink            | Effect                                                                                          |
+| --------------- | ----------------------------------------------------------------------------------------------- |
+| `stdout`        | Default; write to stdout only                                                                   |
+| `file:<path>`   | Atomically write output to `<path>` (tmp + rename)                                              |
 | `webhook:<url>` | POST the output body to the URL (`application/json` or `application/x-ndjson` when `--compact`) |
 
 Unknown schemes are refused with a structured error naming the supported set. Webhook failures return non-zero and log the URL + HTTP status on stderr.
@@ -181,15 +235,15 @@ Explicit flags always win over profile values; profile values win over defaults.
 
 ## Exit Codes
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success |
-| 2 | Usage error (wrong arguments) |
-| 3 | Resource not found |
-| 4 | Authentication required |
-| 5 | API error (upstream issue) |
-| 7 | Rate limited (wait and retry) |
-| 10 | Config error |
+| Code | Meaning                       |
+| ---- | ----------------------------- |
+| 0    | Success                       |
+| 2    | Usage error (wrong arguments) |
+| 3    | Resource not found            |
+| 4    | Authentication required       |
+| 5    | API error (upstream issue)    |
+| 7    | Rate limited (wait and retry) |
+| 10   | Config error                  |
 
 ## Argument Parsing
 

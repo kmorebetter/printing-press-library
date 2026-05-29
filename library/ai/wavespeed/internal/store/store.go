@@ -39,10 +39,32 @@ func IsUUID(s string) bool {
 	return uuidPattern.MatchString(s)
 }
 
-// StoreSchemaVersion is the on-disk schema version this binary understands.
-// It is stamped into SQLite's PRAGMA user_version on fresh databases and
-// checked on every open. Non-learn CLIs stay at v2.
+// StoreSchemaVersion is the archive DB's on-disk schema version this binary
+// understands. It is stamped into SQLite's PRAGMA user_version on fresh
+// archive databases and checked on every open. Non-learn CLIs stay at v2.
+//
+// The catalog now uses two physically separate SQLite files with independent
+// version domains: the archive DB (sync-cache tables, this constant) and the
+// library DB (D2C content-production tables, LibrarySchemaVersion). Because
+// they are separate files, PRAGMA user_version is already per-DB; the two
+// constants keep the migration sets from being conflated.
 const StoreSchemaVersion = 2
+
+// LibrarySchemaVersion is the on-disk schema version of the library DB, which
+// holds the novel D2C content-production tables (generations, brand_profiles,
+// briefs, tags, tag_links, platform_targets). It is versioned independently of
+// the archive DB so the two migration sets never share a version stamp.
+const LibrarySchemaVersion = 1
+
+// storeKind selects which migration set Open runs. A Store opened for the
+// archive DB runs the generated sync-cache migrations; a Store opened for the
+// library DB runs migrateLibrary instead.
+type storeKind int
+
+const (
+	archiveKind storeKind = iota
+	libraryKind
+)
 
 const resourcesFTSCreateSQL = `CREATE VIRTUAL TABLE IF NOT EXISTS resources_fts USING fts5(
 	id, resource_type, content, tokenize='porter unicode61'
@@ -57,6 +79,7 @@ type Store struct {
 	// race-free by construction within a resource.
 	writeMu sync.Mutex
 	path    string
+	kind    storeKind
 }
 
 // Open opens or creates the SQLite store at dbPath using the background
@@ -117,6 +140,39 @@ func OpenWithContext(ctx context.Context, dbPath string) (*Store, error) {
 	if err := s.migrate(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("running migrations: %w", err)
+	}
+
+	return s, nil
+}
+
+// OpenLibrary opens or creates the library SQLite store at dbPath using the
+// background context. The library DB holds the novel D2C content-production
+// tables and is migrated by migrateLibrary, independent of the archive DB's
+// sync-cache schema. Prefer OpenLibraryWithContext from a Cobra command.
+func OpenLibrary(dbPath string) (*Store, error) {
+	return OpenLibraryWithContext(context.Background(), dbPath)
+}
+
+// OpenLibraryWithContext opens or creates the library SQLite store at dbPath.
+// It mirrors OpenWithContext's connection setup and concurrency hardening but
+// runs the library migration set (generations, brand_profiles, briefs, tags,
+// tag_links, platform_targets + FTS5) rather than the archive sync-cache
+// tables.
+func OpenLibraryWithContext(ctx context.Context, dbPath string) (*Store, error) {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, fmt.Errorf("creating db directory: %w", err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)&_pragma=temp_store(MEMORY)&_pragma=mmap_size(268435456)")
+	if err != nil {
+		return nil, fmt.Errorf("opening library database: %w", err)
+	}
+	db.SetMaxOpenConns(2)
+
+	s := &Store{db: db, path: dbPath, kind: libraryKind}
+	if err := s.migrate(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("running library migrations: %w", err)
 	}
 
 	return s, nil
@@ -259,6 +315,12 @@ func (s *Store) backfillColumns(ctx context.Context, conn *sql.Conn) error {
 }
 
 func (s *Store) migrate(ctx context.Context) error {
+	// Library stores run an entirely separate migration set with its own
+	// version domain. Branch before any archive sync-cache table is touched
+	// so library.db never accumulates resources/sync_state/etc.
+	if s.kind == libraryKind {
+		return s.migrateLibrary(ctx)
+	}
 	// Acquiring the migration connection establishes a physical SQLite
 	// connection, which runs the DSN _pragma directives — including the
 	// journal_mode(WAL) conversion. On a fresh DB opened by several

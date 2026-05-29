@@ -47,7 +47,7 @@ and full resync. After archiving, use 'search' for instant full-text search.`,
 			c.NoCache = true
 
 			if dbPath == "" {
-				dbPath = defaultDBPath("wavespeed-pp-cli")
+				dbPath = archiveDBPath()
 			}
 			s, err := store.OpenWithContext(cmd.Context(), dbPath)
 			if err != nil {
@@ -101,7 +101,7 @@ and full resync. After archiving, use 'search' for instant full-text search.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.local/share/wavespeed-pp-cli/data.db)")
+	cmd.Flags().StringVar(&dbPath, "db", "", "Database path (default: ~/.local/share/wavespeed-pp-cli/archive.db)")
 	cmd.Flags().BoolVar(&full, "full", false, "Full re-archive (ignore previous sync state)")
 
 	return cmd
@@ -121,7 +121,7 @@ func newWorkflowStatusCmd(flags *rootFlags) *cobra.Command {
   wavespeed-pp-cli workflow status --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dbPath == "" {
-				dbPath = defaultDBPath("wavespeed-pp-cli")
+				dbPath = archiveDBPath()
 			}
 			s, err := store.OpenWithContext(cmd.Context(), dbPath)
 			if err != nil {
@@ -162,4 +162,4 @@ func newWorkflowStatusCmd(flags *rootFlags) *cobra.Command {
 	return cmd
 }
 
-// defaultDBPath is defined in helpers.go
+// archiveDBPath is defined in helpers.go

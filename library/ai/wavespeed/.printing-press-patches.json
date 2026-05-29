@@ -51,6 +51,111 @@
       "validated_outcome": "go test ./... passed after the publish-review fixes, including mixed --set/--input-kv and echoed-input URL filtering."
     },
     {
+      "id": "wavespeed-novel-store-schema",
+      "summary": "Split the store into archive (sync-cache) and library (D2C content) DBs with independent version domains; added OpenLibrary, migrateLibrary, and library tables/indexes/FTS5.",
+      "reason": "The novel content-production layer needs its own persistent tables versioned independently of the generated sync-cache schema.",
+      "files": [
+        "internal/store/store.go",
+        "internal/store/extras.go",
+        "internal/store/library.go"
+      ],
+      "validated_outcome": "Schema migration test creates archive.db and library.db with independent user_version domains; FTS5 prompt search returns expected results."
+    },
+    {
+      "id": "wavespeed-novel-common-helpers",
+      "summary": "Added shared Shot type, AgentEnvelope, brand-merge precedence resolver, record-policy resolver, cost/balance helpers, and shotlist IO in novel_common.go; extracted submitAndAwait from run.go and added run --record.",
+      "reason": "All novel commands operate on one canonical Shot schema and emit a uniform envelope; submitAndAwait gives a no-prints structured generation chain reusable across commands.",
+      "files": [
+        "internal/cli/novel_common.go",
+        "internal/cli/run.go",
+        "internal/cli/helpers.go",
+        "internal/cli/channel_workflow.go"
+      ],
+      "validated_outcome": "submitAndAwait_test proves structured-data/no-prints/failed-prediction-not-error; brand precedence and record-policy unit tests pass."
+    },
+    {
+      "id": "wavespeed-novel-platform-specs",
+      "summary": "Added the IG/TikTok/Facebook/X platform request-shape table (dimensions, duration caps, manifest slots).",
+      "reason": "pack, qa preflight, and the image-dimension validator need a single source of truth for per-platform output shapes.",
+      "files": [
+        "internal/cli/platform_specs.go"
+      ]
+    },
+    {
+      "id": "wavespeed-novel-plan",
+      "summary": "Added plan brief-to-shotlist (hybrid deterministic/LLM planner), model-pick, and cost-estimate.",
+      "reason": "Agents need to shape briefs into structured shotlists and price them before producing.",
+      "files": [
+        "internal/cli/novel_plan.go"
+      ]
+    },
+    {
+      "id": "wavespeed-novel-pack",
+      "summary": "Added pack: multi-platform producer with concurrency, cost ceiling, on-failure policy, history/clean, mutable-latest layout, per-platform manifests, and stdlib image-dimension validation.",
+      "reason": "The core produce command that turns one concept into a post-ready, manifest-bearing pack.",
+      "files": [
+        "internal/cli/novel_pack.go"
+      ]
+    },
+    {
+      "id": "wavespeed-novel-batch",
+      "summary": "Added batch: submit many prompts from CSV/JSON with spend ceiling and fail-fast/fail-tolerant semantics.",
+      "reason": "Bulk production with cost control and partial-failure recording.",
+      "files": [
+        "internal/cli/novel_batch.go"
+      ]
+    },
+    {
+      "id": "wavespeed-novel-variants",
+      "summary": "Added variants: seed/style/model sweep off a base shot with side-by-side metadata.",
+      "reason": "Comparative generation so an agent can pick the best output.",
+      "files": [
+        "internal/cli/novel_variants.go"
+      ]
+    },
+    {
+      "id": "wavespeed-novel-compose",
+      "summary": "Added compose: explicit step pipeline with step-to-step wiring and rollback of later steps on failure.",
+      "reason": "Multi-stage workflows (text->image->upscale->video) need ordered chaining with completed-step recording.",
+      "files": [
+        "internal/cli/novel_compose.go"
+      ]
+    },
+    {
+      "id": "wavespeed-novel-refine",
+      "summary": "Added aspects (re-frame with outpaint or anchored re-render fallback) and restyle (brand/style img2img).",
+      "reason": "Refine existing assets into platform ratios and brand styling.",
+      "files": [
+        "internal/cli/novel_aspects.go",
+        "internal/cli/novel_restyle.go"
+      ]
+    },
+    {
+      "id": "wavespeed-novel-library",
+      "summary": "Added library list/search/show/tag/export/cost-report over the library DB.",
+      "reason": "Agents need to query and roll up the recorded generation history.",
+      "files": [
+        "internal/cli/novel_library.go"
+      ]
+    },
+    {
+      "id": "wavespeed-novel-qa",
+      "summary": "Added qa preflight with pass/warn/fail verdicts over balance, model availability, prompt safety, platform request-shape, and brand coverage.",
+      "reason": "Catch production problems (e.g. an IG reel above the 90s cap) before spending.",
+      "files": [
+        "internal/cli/novel_qa.go"
+      ]
+    },
+    {
+      "id": "wavespeed-novel-brand",
+      "summary": "Added brand init/show/list/apply/edit with a non-interactive primary path and a narrow TTY-only interactive gate; brand profiles auto-merge into produce/refine and run.",
+      "reason": "Brand profiles centralize style anchors, palette, negative prompts, models, and platforms for consistent D2C output.",
+      "files": [
+        "internal/cli/novel_brand.go",
+        "internal/cli/run.go"
+      ]
+    },
+    {
       "id": "wavespeed-run-download-recovery",
       "summary": "Hardened run --download so completed prediction payloads print before download attempts and CDN downloads do not receive API credentials.",
       "reason": "WaveSpeed completed predictions can include public CDN outputs plus API management URLs; attaching credentials to CDN requests or failing before printing the paid result loses the successful generation URL.",
