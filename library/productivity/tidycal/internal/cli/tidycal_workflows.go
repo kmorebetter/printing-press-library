@@ -388,7 +388,7 @@ func resolveWorkflowWindow(dateExpr, fromExpr, toExpr string, loc *time.Location
 		}
 		start := dayStart(day, loc)
 		end := start.AddDate(0, 0, 1)
-		return tidycalWindow{From: start, To: end, FromDate: start.Format("2006-01-02"), ToDate: end.Format("2006-01-02")}, nil
+		return workflowWindow(start, end), nil
 	}
 	if strings.TrimSpace(fromExpr) == "" {
 		fromExpr = "today"
@@ -412,7 +412,16 @@ func resolveWorkflowWindow(dateExpr, fromExpr, toExpr string, loc *time.Location
 	if !end.After(start) {
 		end = end.AddDate(0, 0, 1)
 	}
-	return tidycalWindow{From: start, To: end, FromDate: start.Format("2006-01-02"), ToDate: end.Format("2006-01-02")}, nil
+	return workflowWindow(start, end), nil
+}
+
+func workflowWindow(start, end time.Time) tidycalWindow {
+	return tidycalWindow{
+		From:     start,
+		To:       end,
+		FromDate: start.Format("2006-01-02"),
+		ToDate:   end.Add(-time.Nanosecond).Format("2006-01-02"),
+	}
 }
 
 func parseWorkflowDate(expr string, now time.Time, loc *time.Location) (time.Time, error) {
@@ -485,23 +494,38 @@ func fetchWorkflowSlots(ctx context.Context, flags *rootFlags, bookingTypeID str
 	}
 	path := "/booking-types/{bookingType}/timeslots"
 	path = replacePathParam(path, "bookingType", bookingTypeID)
-	data, err := c.GetWithHeaders(ctx, path, map[string]string{"starts_at": window.FromDate, "ends_at": window.ToDate}, nil)
+	data, err := c.GetWithHeaders(ctx, path, map[string]string{
+		"starts_at": workflowAPIDateTime(window.From),
+		"ends_at":   workflowAPIDateTime(window.To),
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
 	slots := parseWorkflowSlots(data, loc)
-	filtered := slots[:0]
-	for _, slot := range slots {
-		if avoidWeekends && (slot.localStart.Weekday() == time.Saturday || slot.localStart.Weekday() == time.Sunday) {
-			continue
-		}
-		filtered = append(filtered, slot)
-	}
+	filtered := filterSlotsInWindow(slots, window, avoidWeekends)
 	rankSlots(filtered, prefer)
 	if len(filtered) > count {
 		filtered = filtered[:count]
 	}
 	return filtered, nil
+}
+
+func workflowAPIDateTime(t time.Time) string {
+	return t.UTC().Format("2006-01-02T15:04:05Z")
+}
+
+func filterSlotsInWindow(slots []tidycalSlot, window tidycalWindow, avoidWeekends bool) []tidycalSlot {
+	filtered := slots[:0]
+	for _, slot := range slots {
+		if slot.localStart.Before(window.From) || !slot.localStart.Before(window.To) {
+			continue
+		}
+		if avoidWeekends && (slot.localStart.Weekday() == time.Saturday || slot.localStart.Weekday() == time.Sunday) {
+			continue
+		}
+		filtered = append(filtered, slot)
+	}
+	return filtered
 }
 
 func parseWorkflowBookings(data json.RawMessage) []workflowBooking {

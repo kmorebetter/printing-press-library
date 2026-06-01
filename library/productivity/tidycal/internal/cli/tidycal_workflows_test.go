@@ -18,6 +18,20 @@ func TestResolveWorkflowWindowTreatsRelativeToAsInclusiveDate(t *testing.T) {
 	if got := window.To.Sub(window.From); got != 48*time.Hour {
 		t.Fatalf("window duration = %s, want 48h for today through +1d", got)
 	}
+	if window.ToDate != window.To.Add(-time.Nanosecond).Format("2006-01-02") {
+		t.Fatalf("window ToDate = %q, want last included date", window.ToDate)
+	}
+}
+
+func TestWorkflowWindowToDateIsLastIncludedDate(t *testing.T) {
+	loc := time.UTC
+	start := time.Date(2026, 6, 1, 0, 0, 0, 0, loc)
+	end := time.Date(2026, 6, 2, 0, 0, 0, 0, loc)
+
+	window := workflowWindow(start, end)
+	if window.ToDate != "2026-06-01" {
+		t.Fatalf("ToDate = %q, want last included date", window.ToDate)
+	}
 }
 
 func TestFilterBookingsInWindowSkipsUnparseableStartsAt(t *testing.T) {
@@ -52,5 +66,31 @@ func TestBuildFollowupsKeepsCancelledReasonAheadOfIntakeAnswer(t *testing.T) {
 	}
 	if got[0].SuggestedReason != "cancelled_booking" {
 		t.Fatalf("SuggestedReason = %q, want cancelled_booking", got[0].SuggestedReason)
+	}
+}
+
+func TestWorkflowAPIDateTimeUsesUTCDateTime(t *testing.T) {
+	loc := time.FixedZone("test", -5*60*60)
+	got := workflowAPIDateTime(time.Date(2026, 6, 1, 9, 30, 0, 0, loc))
+	if got != "2026-06-01T14:30:00Z" {
+		t.Fatalf("workflowAPIDateTime = %q, want UTC date-time", got)
+	}
+}
+
+func TestFilterSlotsInWindowClipsOutOfRangeSlots(t *testing.T) {
+	loc := time.UTC
+	window := workflowWindow(
+		time.Date(2026, 6, 1, 0, 0, 0, 0, loc),
+		time.Date(2026, 6, 2, 0, 0, 0, 0, loc),
+	)
+	slots := []tidycalSlot{
+		{StartsAt: "before", localStart: time.Date(2026, 5, 31, 23, 0, 0, 0, loc)},
+		{StartsAt: "inside", localStart: time.Date(2026, 6, 1, 12, 0, 0, 0, loc)},
+		{StartsAt: "boundary", localStart: time.Date(2026, 6, 2, 0, 0, 0, 0, loc)},
+	}
+
+	got := filterSlotsInWindow(slots, window, false)
+	if len(got) != 1 || got[0].StartsAt != "inside" {
+		t.Fatalf("filtered slots = %+v, want only inside slot", got)
 	}
 }
