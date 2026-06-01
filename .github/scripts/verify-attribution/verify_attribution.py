@@ -121,11 +121,24 @@ def unquote_scalar(raw: str) -> str:
 FRONTMATTER_RE = re.compile(r"\A---\n(?P<body>.*?)(?:\n---\n|\n---\Z)", re.DOTALL)
 AUTHOR_LINE_RE = re.compile(r"(?m)^author:\s*(?P<value>.+?)\s*$")
 
+# A SKILL.md whose first bytes are a UTF-8 BOM or a leading HTML comment defeats
+# the strict `\A---` frontmatter match. That is itself a real defect (such files
+# fail to install via `skills add`), but here it would also make this guard read
+# the author as None and report a phantom attribution change the moment the
+# leading bytes are removed -- even though the author value never changed. Skip
+# that leading noise before parsing the author so before/after compare on the
+# real value.
+LEADING_NOISE_RE = re.compile(r"\A\ufeff?(?:\s*<!--.*?-->)*\s*", re.DOTALL)
+
+
+def strip_leading_noise(text: str) -> str:
+    return text[LEADING_NOISE_RE.match(text).end() :]
+
 
 def skill_author(text: str | None) -> str | None:
     if text is None:
         return None
-    fm = FRONTMATTER_RE.match(text)
+    fm = FRONTMATTER_RE.match(strip_leading_noise(text))
     if not fm:
         return None
     author = AUTHOR_LINE_RE.search(fm.group("body"))
