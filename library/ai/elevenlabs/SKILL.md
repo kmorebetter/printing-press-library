@@ -100,6 +100,13 @@ These capabilities aren't available in any other tool for this API.
   ```bash
   elevenlabs-pp-cli podcast clip --audio episode.mp3 --count 5 --aspect 9:16,1:1,16:9 --out ./clips --agent
   ```
+- **`podcast voice design`** - Design a reusable signature show voice from a prompt and persist the created `voice_id` into a show-bible cast entry.
+
+  _Agents can establish a consistent host voice for `podcast auto` and `podcast produce` without using the blocked multi-file clone path._
+
+  ```bash
+  elevenlabs-pp-cli podcast voice design --show bestself-focus --speaker HOST --description "calm, warm, authoritative productivity host" --agent
+  ```
 
 ## Command Reference
 
@@ -273,6 +280,8 @@ These capabilities aren't available in any other tool for this API.
 - `elevenlabs-pp-cli podcast master` — De-noise and loudness-normalize a finished podcast episode
 - `elevenlabs-pp-cli podcast seo` — Create transcript, chapters, and SEO assets for an episode
 - `elevenlabs-pp-cli podcast clip` — Score and cut short-form podcast clips
+- `elevenlabs-pp-cli podcast voice` — Manage podcast signature voices
+- `elevenlabs-pp-cli podcast voice design` — Design and persist a signature podcast voice
 
 **dubbing** — Manage dubbing
 

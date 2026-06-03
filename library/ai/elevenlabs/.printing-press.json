@@ -67,6 +67,11 @@
       "name": "Podcast Clip Extractor",
       "command": "podcast clip",
       "description": "Score an episode's transcript windows for short-form potential (hook/flow/value), then cut and caption the top N as audio or multi-aspect video clips for TikTok/Reels/Shorts. Requires local ffmpeg."
+    },
+    {
+      "name": "Podcast Signature Voice",
+      "command": "podcast voice design",
+      "description": "Design and persist a signature host voice from a prompt, optionally biased by a reference clip and seed, then write the resulting voice_id into the show-bible for reuse across episodes."
     }
   ]
 }

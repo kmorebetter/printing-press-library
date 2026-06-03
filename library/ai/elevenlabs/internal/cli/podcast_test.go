@@ -188,3 +188,33 @@ func TestAspectSuffix(t *testing.T) {
 		t.Fatalf("aspect suffix = %q", got)
 	}
 }
+
+func TestPodcastVoicePreviewSelection(t *testing.T) {
+	previews := parsePodcastVoicePreviews([]byte(`{"previews":[{"generated_voice_id":"gen1","preview_url":"https://example.test/1.mp3"},{"generated_voice_id":"gen2"}]}`))
+	if len(previews) != 2 {
+		t.Fatalf("previews = %d", len(previews))
+	}
+	if got := choosePodcastGeneratedVoice(previews, "2"); got != "gen2" {
+		t.Fatalf("pick by index = %q", got)
+	}
+	if got := choosePodcastGeneratedVoice(previews, "gen1"); got != "gen1" {
+		t.Fatalf("pick by id = %q", got)
+	}
+}
+
+func TestUpsertPodcastShowBibleVoice(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "show.yaml")
+	if err := upsertPodcastShowBibleVoice(path, "bestself", "HOST", "voice123", "designed", "42", "warm host"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{`slug: bestself`, `HOST:`, `voice: "voice123"`, `voice_kind: designed`, `voice_seed: "42"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("show bible missing %q:\n%s", want, text)
+		}
+	}
+}

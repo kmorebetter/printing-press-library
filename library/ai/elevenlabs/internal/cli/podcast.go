@@ -140,6 +140,7 @@ func newPodcastCmd(flags *rootFlags) *cobra.Command {
 	cmd.AddCommand(newPodcastMasterCmd(flags))
 	cmd.AddCommand(newPodcastSEOCmd(flags))
 	cmd.AddCommand(newPodcastClipCmd(flags))
+	cmd.AddCommand(newPodcastVoiceCmd(flags))
 	return cmd
 }
 
