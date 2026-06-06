@@ -38,8 +38,14 @@ func newProgramsFitCmd(flags *rootFlags) *cobra.Command {
 					spec[t] = true
 				}
 			}
-			programs, _ := listResourceObjects(db, "programs", 10000)
-			hacks, _ := listResourceObjects(db, "hacktivity", 100000)
+			programs, err := listResourceObjects(db, "programs", 10000)
+			if err != nil {
+				return err
+			}
+			hacks, err := listResourceObjects(db, "hacktivity", 100000)
+			if err != nil {
+				return err
+			}
 			var out []map[string]any
 			for _, p := range programs {
 				slug := programSlug(p)

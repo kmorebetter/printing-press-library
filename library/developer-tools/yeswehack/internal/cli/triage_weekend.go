@@ -44,7 +44,10 @@ func newTriageCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer db.Close()
-			reports, _ := listResourceObjects(db, "user-reports", 10000)
+			reports, err := listResourceObjects(db, "user-reports", 10000)
+			if err != nil {
+				return err
+			}
 			var need []map[string]any
 			for _, r := range reports {
 				state := strings.ToLower(stringField(r, "state", "data.state"))

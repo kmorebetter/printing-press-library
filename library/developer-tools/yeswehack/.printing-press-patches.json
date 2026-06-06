@@ -60,6 +60,15 @@
         "internal/store/search_by_type_test.go"
       ],
       "validated_outcome": "New TestSearchByType_FTS5SpecialCharsNoCrash exercises 6 previously-crashing inputs (unbalanced parens, internal quotes, bare *, OR/AND keywords) and confirms each returns without error."
+    },
+    {
+      "id": "list-resource-objects-error-propagation",
+      "summary": "programs fit and triage weekend propagate listResourceObjects errors instead of discarding them with _.",
+      "reason": "When the local SQLite store is unavailable, schema-incompatible after a store upgrade, or not yet synced, both commands silently rendered empty output instead of surfacing the underlying error. Matches the error-handling idiom already used by hacktivity learn/trends and programs scope-drift. Greptile P1 on PR #459.",
+      "files": [
+        "internal/cli/programs_fit.go",
+        "internal/cli/triage_weekend.go"
+      ]
     }
   ]
 }
