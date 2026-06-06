@@ -227,11 +227,24 @@ func runComparePair(cmd *cobra.Command, flags *rootFlags, db *store.Store, topic
 	kalshiVenue := compareVenueFromRaw(kalshiRow)
 	delta := (pmRow.YesProbability - kalshiRow.YesProbability) * 100
 	pair := comparePair{Topic: topic, PM: &pmVenue, Kalshi: &kalshiVenue, Match: 1.0, DeltaPct: &delta}
-	result := compareResult{Topic: topic, Pairs: []comparePair{pair}}
+	// Live-on-read freshness: the explicit-pair path goes through the same
+	// refresh pipeline as the FTS path, so an agent doing arbitrage math on
+	// --pair output gets live prices (or an explicit staleness signal in
+	// Meta) instead of silently reading yesterday's index. See freshness.go.
+	pairs := []comparePair{pair}
+	outcome := refreshComparePairs(cmd.Context(), nil, pairs)
+	meta := buildFreshnessMeta(outcome, indexSyncedAt(db))
+	result := compareResult{Topic: topic, Pairs: pairs, Meta: meta}
 	if flags.asJSON || !isTerminal(cmd.OutOrStdout()) {
 		return printJSONFiltered(cmd.OutOrStdout(), result, flags)
 	}
-	return printCompareTable(cmd.OutOrStdout(), result.Pairs)
+	if err := printCompareTable(cmd.OutOrStdout(), result.Pairs); err != nil {
+		return err
+	}
+	if footer := freshnessFooterLine(meta); footer != "" {
+		fmt.Fprintln(cmd.OutOrStdout(), footer)
+	}
+	return nil
 }
 
 // lookupRawMarket fetches a single market row by resource type and id
@@ -295,6 +308,14 @@ ORDER BY rank LIMIT ?`, topicFTSQuery(topic), resourceType, limit)
 	return markets, rows.Err()
 }
 
+// pairCompareMarkets greedily pairs FTS-ranked PM markets with their
+// best-scoring unused Kalshi counterpart. Only confident matches (both
+// sides present, Jaccard >= 0.20) count toward `limit`: unmatched PM-only
+// entries used to consume the cap, so 20 low-scoring leaders could mask
+// real pairs sitting deeper in the 10x over-fetched candidate slices and
+// produce a false "no_confident_pair". The caller surfaces per-venue
+// leftovers separately via buildUnpaired, so one-sided pairs are not
+// emitted here at all.
 func pairCompareMarkets(topic string, pmMarkets, kalshiMarkets []rawMarket, limit int) []comparePair {
 	pairs := make([]comparePair, 0)
 	usedKalshi := make(map[int]bool)
@@ -310,27 +331,14 @@ func pairCompareMarkets(topic string, pmMarkets, kalshiMarkets []rawMarket, limi
 				bestScore = score
 			}
 		}
-		pmVenue := compareVenueFromRaw(pm)
-		pair := comparePair{Topic: topic, PM: &pmVenue}
-		if bestIdx >= 0 && bestScore >= 0.20 {
-			usedKalshi[bestIdx] = true
-			kalshiVenue := compareVenueFromRaw(kalshiMarkets[bestIdx])
-			delta := (pm.YesProbability - kalshiMarkets[bestIdx].YesProbability) * 100
-			pair.Kalshi = &kalshiVenue
-			pair.Match = bestScore
-			pair.DeltaPct = &delta
-		}
-		pairs = append(pairs, pair)
-		if len(pairs) >= limit {
-			return pairs
-		}
-	}
-	for i, kalshi := range kalshiMarkets {
-		if usedKalshi[i] {
+		if bestIdx < 0 || bestScore < 0.20 {
 			continue
 		}
-		kalshiVenue := compareVenueFromRaw(kalshi)
-		pairs = append(pairs, comparePair{Topic: topic, Kalshi: &kalshiVenue})
+		usedKalshi[bestIdx] = true
+		pmVenue := compareVenueFromRaw(pm)
+		kalshiVenue := compareVenueFromRaw(kalshiMarkets[bestIdx])
+		delta := (pm.YesProbability - kalshiMarkets[bestIdx].YesProbability) * 100
+		pairs = append(pairs, comparePair{Topic: topic, PM: &pmVenue, Kalshi: &kalshiVenue, Match: bestScore, DeltaPct: &delta})
 		if len(pairs) >= limit {
 			return pairs
 		}

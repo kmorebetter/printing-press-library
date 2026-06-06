@@ -435,6 +435,24 @@
         "internal/cli/teach.go",
         "SKILL.md"
       ]
+    },
+    {
+      "id": "compare-pair-path-live-refresh",
+      "summary": "The --pair explicit-match path runs the same live-on-read refresh and freshness Meta pipeline as the FTS compare path.",
+      "reason": "runComparePair served prices straight from the local SQLite index with a nil Meta, so agents doing arbitrage math on --pair output could read stale prices with no staleness signal. Greptile P1 on PR #780.",
+      "files": [
+        "internal/cli/compare.go"
+      ]
+    },
+    {
+      "id": "compare-pair-limit-counts-matches-only",
+      "summary": "pairCompareMarkets counts only confident two-sided matches toward --limit and no longer emits one-sided pairs.",
+      "reason": "Unmatched PM-only leaders consumed the cap, so 20 low-scoring FTS leaders could mask real pairs deeper in the 10x over-fetched candidates and produce a false no_confident_pair. One-sided rows were dead weight: the caller filtered them and surfaces per-venue leftovers via buildUnpaired. Greptile P1 on PR #780.",
+      "files": [
+        "internal/cli/compare.go",
+        "internal/cli/compare_test.go"
+      ],
+      "validated_outcome": "TestPairCompareMarkets_LimitCountsOnlyMatches places the only 2 confident matches after 3 unmatchable PM leaders with limit=2 and asserts both surface."
     }
   ]
 }
