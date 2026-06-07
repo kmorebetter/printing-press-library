@@ -41,9 +41,10 @@ func newSunoGenerateCreateCmd(flags *rootFlags) *cobra.Command {
 		Short: "Generate a custom song from lyrics (captcha-gated)",
 		Long: `Generate a custom Suno song from your own lyrics.
 
-Suno's generation endpoint is protected by hCaptcha. You MUST supply a token
-with --token <hcaptcha-token> (e.g. solved via 2Captcha) OR explicitly bypass
-the gate with --no-captcha. This command will never launch a browser or solver.
+Suno's generation endpoint is protected by hCaptcha. When the gate trips, the
+CLI auto-solves it with a dedicated piloted-Chrome profile (see 'auth captcha').
+Use --captcha-profile to pick an account, or pass a pre-solved --token to skip
+the browser. Pass --no-captcha to suppress the auto-solver entirely.
 
 Provide lyrics inline with --lyrics or from a file with --lyrics-file. For a
 description-driven (non-custom) generation, use the 'generate describe' command instead.`,
@@ -93,7 +94,6 @@ description-driven (non-custom) generation, use the 'generate describe' command 
 			// Captcha gate.
 			// Optimistic captcha: attempt without a token; runGenerationFlow
 			// surfaces captchaRequiredError only if Suno actually challenges it.
-			_ = noCaptcha
 
 			finalTags := tags
 			if v := vocalTag(vocal); v != "" {
@@ -119,7 +119,7 @@ description-driven (non-custom) generation, use the 'generate describe' command 
 				styleInfluence: sliderFraction(styleInfluence, cmd, "style-influence"),
 				variation:      variationVal,
 			})
-			return runGenerationFlow(cmd, flags, body, wait, downloadDir, workspace)
+			return runGenerationFlow(cmd, flags, body, wait, downloadDir, workspace, noCaptcha)
 		},
 	}
 
@@ -136,6 +136,7 @@ description-driven (non-custom) generation, use the 'generate describe' command 
 	cmd.Flags().StringVar(&persona, "persona", "", "Persona ID to apply")
 	cmd.Flags().StringVar(&token, "token", "", "hCaptcha token (required unless --no-captcha)")
 	cmd.Flags().BoolVar(&noCaptcha, "no-captcha", false, "Bypass the hCaptcha requirement")
+	cmd.Flags().StringVar(&captchaProfileFlag, "captcha-profile", "", "Solver profile (Chrome account) to use when the gate trips")
 	cmd.Flags().StringVar(&workspace, "workspace", "", "Workspace (project) ID to add the generated clip(s) to")
 	cmd.Flags().StringVar(&workspace, "project", "", "Alias for --workspace (Suno 'project' ID)")
 	cmd.Flags().StringVar(&variation, "variation", "", "Advanced variation preset: high, normal, or subtle (best-effort)")

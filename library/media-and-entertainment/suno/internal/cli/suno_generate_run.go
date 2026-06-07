@@ -13,11 +13,13 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/mvanhorn/printing-press-library/library/media-and-entertainment/suno/internal/auth"
+	"github.com/mvanhorn/printing-press-library/library/media-and-entertainment/suno/internal/captcha"
 	"github.com/mvanhorn/printing-press-library/library/media-and-entertainment/suno/internal/client"
 	"github.com/mvanhorn/printing-press-library/library/media-and-entertainment/suno/internal/cliutil"
 	"github.com/mvanhorn/printing-press-library/library/media-and-entertainment/suno/internal/config"
@@ -27,56 +29,38 @@ import (
 
 const sunoGeneratePath = "/api/generate/v2-web/"
 
-// Gate-retry flag names. Shared between registration (generate.go, as inherited
-// persistent flags) and the string-keyed reads in runGenerationFlow, so a
-// rename cannot silently desync the two (the reads are by name, not by a bound
-// variable, because runGenerationFlow is a shared tail that does not own the
-// flag vars).
-const (
-	flagWaitForGate = "wait-for-gate"
-	flagGateTimeout = "gate-timeout"
-)
-
-// captchaRequiredError returns the actionable usage error (exit 2) shown when
-// Suno's adaptive hCaptcha challenge actually fires for a generation. The CLI
-// attempts generation optimistically (no token); this only surfaces when the
-// API rejects the request as captcha-gated. Generation never launches a
-// browser/solver.
+// captchaRequiredError is the terminal prose error (exit 2) when the gate is
+// still tripped after an automatic solve attempt, or when an interactive solve
+// is required but input is disabled (--no-input/--agent). Cobra prints it to
+// stderr.
 func captchaRequiredError() error {
 	return usageErr(fmt.Errorf(
-		"Suno required an hCaptcha token for this generation.\n" +
-			"      Suno gates generation adaptively — many requests succeed with no token,\n" +
-			"      but this one was challenged (typically after sustained use). Options:\n" +
-			"        --token <hcaptcha-token>   (e.g. solved via 2Captcha)\n" +
-			"        --wait-for-gate            (backs off and retries until the gate reopens; --gate-timeout sets the ceiling)\n" +
-			"      This CLI will not launch a browser or solver on your behalf."))
+		"Suno's hCaptcha gate is active and could not be solved automatically.\n" +
+			"      The CLI tried its piloted-Chrome solver for this profile. If this\n" +
+			"      profile has never signed in, run:\n" +
+			"        suno-pp-cli auth captcha login --profile <name>\n" +
+			"      Or supply a pre-solved token with --token <hcaptcha-token>."))
 }
 
-// captchaGateEnvelope is the structured payload emitted to stdout in
-// JSON/agent mode when the adaptive hCaptcha gate fires. Agents branch on
-// error_type "captcha_required" (and retriable) rather than parsing the prose
-// message. Kept as its own function so the shape is unit-testable.
-func captchaGateEnvelope() map[string]any {
-	return map[string]any{
-		"error_type": "captcha_required",
-		"error":      "Suno required an hCaptcha token for this generation",
-		"retriable":  true,
-		"hint":       "retry with --token <hcaptcha-token>, or pass --wait-for-gate to wait out the adaptive cooldown",
-		"code":       2,
-	}
-}
-
-// captchaGateError surfaces the adaptive hCaptcha gate. In JSON/agent mode it
-// writes the captchaGateEnvelope to stdout so consumers can branch on a stable
-// error_type; in human mode it returns only the prose usage error. The exit
-// code is 2 (usage) in both modes, matching captchaRequiredError. Mirrors the
-// writeAPIErrorEnvelope pattern: stdout carries machine output, the returned
-// error drives the exit code (and cobra's stderr prose for humans).
-func captchaGateError(cmd *cobra.Command, flags *rootFlags) error {
-	if flags != nil && flags.asJSON {
-		_ = json.NewEncoder(cmd.OutOrStdout()).Encode(captchaGateEnvelope())
+// captchaGateFailure renders the terminal gate failure. In --json/--agent mode
+// it emits a structured envelope on stdout so agents branch on a field; it
+// always returns the prose cliError (exit 2), which cobra prints to stderr.
+func captchaGateFailure(cmd *cobra.Command, flags *rootFlags) error {
+	if flags.asJSON {
+		_ = json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{
+			"error_type": "captcha_required",
+			"retriable":  true,
+			"message":    "Suno's hCaptcha gate is active and could not be solved automatically",
+		})
 	}
 	return captchaRequiredError()
+}
+
+// handleCaptchaGate runs the piloted-Chrome solver for the active profile and
+// returns a fresh hCaptcha token, or an error. ErrInteractiveRequired is
+// propagated unchanged so the caller can emit the agent envelope.
+func handleCaptchaGate(ctx context.Context, configPath string, interactive bool) (string, error) {
+	return solveCaptchaToken(ctx, configPath, interactive)
 }
 
 // isCaptchaRequired reports whether a generate error is Suno's adaptive
@@ -93,65 +77,43 @@ func isCaptchaRequired(err error) bool {
 		strings.Contains(msg, "verify your request")
 }
 
-// gateRetryConfig parameterizes retryOnGate. now/sleep are injectable so the
-// backoff logic is unit-testable without real time. enabled mirrors
-// --wait-for-gate; timeout mirrors --gate-timeout.
-type gateRetryConfig struct {
-	enabled        bool
-	timeout        time.Duration
-	initialBackoff time.Duration
-	maxBackoff     time.Duration
-	now            func() time.Time
-	sleep          func(context.Context, time.Duration) error
-	onWait         func(attempt int, wait time.Duration)
+// needsCaptchaSolve reports whether a failed generation submit should trigger a
+// captcha solve + retry. Suno rejects a present-but-invalid hCaptcha token with
+// 422 token_validation_failed, but a *null* token (no captcha supplied) with a
+// generic 500 server_error — so a token-less submit that 500s also means the
+// hCaptcha token is required: solve it and retry.
+func needsCaptchaSolve(err error, tokenWasNil bool) bool {
+	if isCaptchaRequired(err) {
+		return true
+	}
+	if !tokenWasNil || err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "returned http 500")
 }
 
-// retryOnGate calls submit once; if the result is an adaptive-gate challenge
-// (isCaptchaRequired) AND retry is enabled, it backs off with capped
-// exponential delay and retries until submit succeeds, returns a non-gate
-// error, or the timeout deadline passes. On timeout it returns the last gate
-// error so the caller maps it to captchaRequiredError. Non-gate errors and
-// successes return immediately — retry never fires on a 401, budget cap, etc.
-func retryOnGate(ctx context.Context, cfg gateRetryConfig, submit func() (*sunoGenerateResponse, error)) (*sunoGenerateResponse, error) {
-	resp, err := submit()
-	if err == nil || !cfg.enabled || !isCaptchaRequired(err) {
-		return resp, err
-	}
-	deadline := cfg.now().Add(cfg.timeout)
-	backoff := cfg.initialBackoff
-	for attempt := 1; cfg.now().Before(deadline); attempt++ {
-		wait := backoff
-		if rem := deadline.Sub(cfg.now()); rem < wait {
-			wait = rem
-		}
-		if wait <= 0 {
-			break
-		}
-		if cfg.onWait != nil {
-			cfg.onWait(attempt, wait)
-		}
-		if serr := cfg.sleep(ctx, wait); serr != nil {
-			return nil, serr
-		}
-		resp, err = submit()
-		if err == nil || !isCaptchaRequired(err) {
-			return resp, err
-		}
-		if backoff *= 2; backoff > cfg.maxBackoff {
-			backoff = cfg.maxBackoff
-		}
-	}
-	return resp, err
-}
+// captchaAction is the decision for how runGenerationFlow handles a failed
+// submit: surface the error as-is, solve the gate and retry, or — when the user
+// passed --no-captcha — surface the gate without launching the solver.
+type captchaAction int
 
-// sleepCtx sleeps for d or returns early if the context is cancelled.
-func sleepCtx(ctx context.Context, d time.Duration) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(d):
-		return nil
+const (
+	captchaProceed    captchaAction = iota // not a gate error; classify and return
+	captchaSolve                           // gate error; solve and retry once
+	captchaSuppressed                      // gate error, but --no-captcha set
+)
+
+// captchaGateAction decides what to do with a submit error given whether the
+// token was nil and whether --no-captcha was set. It keeps the gate policy in
+// one pure, testable place so the --no-captcha contract can't silently regress.
+func captchaGateAction(err error, tokenWasNil, noCaptcha bool) captchaAction {
+	if !needsCaptchaSolve(err, tokenWasNil) {
+		return captchaProceed
 	}
+	if noCaptcha {
+		return captchaSuppressed
+	}
+	return captchaSolve
 }
 
 // resolveModel maps a CLI model value to its wire key using the supplied
@@ -175,7 +137,25 @@ type sunoGenerateResponse struct {
 // submitGeneration POSTs the full body, upserts any returned clips into the
 // local store (best-effort), and returns the parsed response. The caller is
 // responsible for the captcha gate and dry-run short-circuit before calling.
+// userTierForConfig derives metadata.user_tier (the account's tier UUID) from
+// the stored JWT's plan claim. Suno returns 500 server_error on an empty
+// user_tier, so this must be populated before every generation submit.
+func userTierForConfig(configPath string) string {
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return ""
+	}
+	jwt := cfg.SunoJwt
+	if jwt == "" {
+		jwt = cfg.AuthHeader()
+	}
+	return auth.PlanTier(jwt)
+}
+
 func submitGeneration(ctx context.Context, c *client.Client, configPath string, body sunoGenerateBody) (*sunoGenerateResponse, error) {
+	if body.Metadata.UserTier == "" {
+		body.Metadata.UserTier = userTierForConfig(configPath)
+	}
 	// Budget enforcement (restored from the 2026-05-15 build): if a local
 	// daily/monthly credit cap is configured, refuse to submit a generation
 	// that would breach it. A missing store or unset cap is a no-op. The
@@ -315,56 +295,43 @@ func deviceIDFromFlags(flags *rootFlags) string {
 
 // runGenerationFlow is the shared tail of generate/describe/extend/cover/
 // remaster: it submits the body, optionally waits for completion, optionally
-// downloads the finished mp3s, and prints the result. captchaToken/noCaptcha
-// gate is checked by the caller. wait/download are opt-in.
-func runGenerationFlow(cmd *cobra.Command, flags *rootFlags, body sunoGenerateBody, wait bool, downloadDir string, workspaceID string) error {
+// downloads the finished mp3s, and prints the result. On Suno's hCaptcha gate it
+// auto-solves and retries once, unless noCaptcha (--no-captcha) is set, in which
+// case it surfaces the gate without launching the browser solver. wait/download
+// are opt-in.
+func runGenerationFlow(cmd *cobra.Command, flags *rootFlags, body sunoGenerateBody, wait bool, downloadDir string, workspaceID string, noCaptcha bool) error {
 	c, err := flags.newClient()
 	if err != nil {
 		return err
 	}
-	ctx := cmd.Context()
-
-	// Adaptive-gate retry is opt-in via --wait-for-gate (inherited persistent
-	// flag on the generate parent). When off, this is a single submit attempt —
-	// identical to the prior behavior.
-	waitForGate, _ := cmd.Flags().GetBool(flagWaitForGate)
-	gateTimeout, _ := cmd.Flags().GetDuration(flagGateTimeout)
-	cfg := gateRetryConfig{
-		enabled:        waitForGate,
-		timeout:        gateTimeout,
-		initialBackoff: 30 * time.Second,
-		maxBackoff:     5 * time.Minute,
-		now:            time.Now,
-		sleep:          sleepCtx,
-	}
-	// Show retry progress on any non-JSON run (not just --human-friendly): a
-	// --wait-for-gate wait can last many minutes, and a silent process reads as
-	// a hang. Agent/JSON mode stays clean (progress would corrupt stdout JSON).
-	if waitForGate && !flags.asJSON {
-		deadline := time.Now().Add(gateTimeout)
-		cfg.onWait = func(attempt int, wait time.Duration) {
-			remaining := time.Until(deadline).Round(time.Second)
-			fmt.Fprintf(cmd.ErrOrStderr(), "gate challenged; waiting %s before retry %d (%s remaining of --gate-timeout)...\n", wait.Round(time.Second), attempt, remaining)
-		}
-	}
-	resp, err := retryOnGate(ctx, cfg, func() (*sunoGenerateResponse, error) {
-		// Re-mint the short-lived Clerk JWT before each attempt. A
-		// --wait-for-gate wait can outlive the session JWT (minutes), and the
-		// client reads c.Config.AuthHeader() live, so without this a long wait
-		// dies with a 401 instead of riding out the cooldown. EnsureFreshJWT
-		// no-ops when the JWT is still fresh and re-mints from the long-lived
-		// __client cookie when it has expired. Best-effort: a refresh failure
-		// falls through to the stored token and surfaces as the real error.
-		if !flags.dryRun && !cliutil.IsVerifyEnv() && c.Config != nil {
-			_ = auth.EnsureFreshJWT(ctx, c.Config)
-		}
-		return submitGeneration(ctx, c, flags.configPath, body)
-	})
+	tokenWasNil := body.Token == nil
+	resp, err := submitGeneration(cmd.Context(), c, flags.configPath, body)
 	if err != nil {
-		if isCaptchaRequired(err) {
-			return captchaGateError(cmd, flags)
+		switch captchaGateAction(err, tokenWasNil, noCaptcha) {
+		case captchaSuppressed:
+			// --no-captcha: report the gate, never launch the solver.
+			return captchaGateFailure(cmd, flags)
+		case captchaSolve:
+			tok, gerr := handleCaptchaGate(cmd.Context(), flags.configPath, !flags.noInput)
+			if gerr != nil {
+				if errors.Is(gerr, captcha.ErrInteractiveRequired) {
+					return captchaGateFailure(cmd, flags)
+				}
+				return usageErr(fmt.Errorf("captcha solve failed: %w", gerr))
+			}
+			body.Token = &tok
+			body.TokenProvider = tokenProvider(tok)
+			// Retry the generation exactly once with the freshly solved token.
+			resp, err = submitGeneration(cmd.Context(), c, flags.configPath, body)
+			if err != nil {
+				if isCaptchaRequired(err) {
+					return captchaGateFailure(cmd, flags)
+				}
+				return classifyAPIError(err, flags)
+			}
+		default: // captchaProceed
+			return classifyAPIError(err, flags)
 		}
-		return classifyAPIError(err, flags)
 	}
 
 	ids := make([]string, 0, len(resp.Clips))
@@ -423,6 +390,9 @@ func runGenerationFlow(cmd *cobra.Command, flags *rootFlags, body sunoGenerateBo
 		out := map[string]any{
 			"status": resp.Status,
 			"clips":  clipObjs,
+			// data mirrors clips as the stable top-level alias consumers read
+			// uniformly across commands. Non-breaking: "clips" stays.
+			"data": clipObjs,
 		}
 		if len(downloaded) > 0 {
 			out["downloaded"] = downloaded

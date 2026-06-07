@@ -6,6 +6,8 @@
   "base_printing_press_version": "4.14.0",
   "summary": "The --wait-for-gate retry loop must re-mint the Clerk JWT before each attempt; a regen must keep per-retry EnsureFreshJWT or long waits die with a 401.",
   "reason": "The Clerk __session JWT is short-lived (minutes). A --wait-for-gate wait can run for many minutes/hours, so the JWT expires mid-wait. The retry only fires on the captcha gate (not 401), so without re-minting, a long wait surfaces a 401 instead of riding out the cooldown — defeating the feature's primary purpose. The client reads c.Config.AuthHeader() live, and EnsureFreshJWT no-ops when fresh and re-mints from the long-lived __client cookie when expired, so calling it before each attempt is cheap and correct. Caught by live dogfooding (a real --wait-for-gate run died with 401 after ~30m).",
-  "files": ["internal/cli/suno_generate_run.go"],
-  "validated_outcome": "A --wait-for-gate run that spans past the JWT lifetime keeps retrying and eventually generates, instead of failing with 401 Unauthorized."
+  "files": ["internal/auth/refresh.go"],
+  "validated_outcome": "EnsureFreshJWT re-mints the stored JWT from the long-lived __client cookie when expired/near-expiry and no-ops when fresh.",
+  "superseded_by": "decouple-studio-cookies-from-jwt",
+  "superseded_note": "The --wait-for-gate retry loop that originally called this was removed with the move to the piloted-Chrome auto-solver. EnsureFreshJWT itself survives and is now invoked by the session-refresh path (EnsureFreshSession in internal/auth/refresh.go), which the session-store-and-verify and decouple-studio-cookies-from-jwt patches own. Files updated to point at the surviving home of the mechanism."
 }

@@ -25,10 +25,21 @@ type Config struct {
 	ClientSecret  string            `toml:"client_secret"`
 	Path          string            `toml:"-"`
 	SunoJwt       string            `toml:"jwt"`
+	EnvSunoJwt    string            `toml:"-"`
+	EnvAuthSource string            `toml:"-"`
 	// Suno/Clerk session material (hand-built; see suno_config.go for accessors).
 	ClerkClientCookieVal string `toml:"clerk_client_cookie,omitempty"`
 	ClerkSessionIDVal    string `toml:"session_id,omitempty"`
 	DeviceIDVal          string `toml:"device_id,omitempty"`
+	// Studio session cache (hand-built; see suno_config.go). The cookie header
+	// and JWT expiry are captured together with the JWT as a matched triple;
+	// SaveSunoSession/SaveSunoJWTOnly clear them whenever the JWT changes.
+	StudioCookieHeaderVal string `toml:"studio_cookie_header,omitempty"`
+	SunoJwtExpiry         int64  `toml:"jwt_expiry,omitempty"`
+	// Captcha holds dedicated piloted-Chrome solver profiles (hand-built; see
+	// suno_captcha.go). Each profile is an isolated Chrome user-data-dir on its
+	// own CDP port, supporting multiple Suno accounts.
+	Captcha *CaptchaConfig `toml:"captcha,omitempty"`
 }
 
 func Load(configPath string) (*Config, error) {
@@ -55,14 +66,16 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
-	// Env var overrides. SUNO_TOKEN is the canonical name; SUNO_JWT is a
-	// backward-compatible alias. SUNO_TOKEN wins when both are set.
+	// Env var fallback. SUNO_TOKEN is the canonical name; SUNO_JWT is a
+	// backward-compatible alias. SUNO_TOKEN wins when both are set. Keep it
+	// separate from file-backed credentials so a stored Clerk session can
+	// refresh first, with env used only if no stored auth header is available.
 	if v := os.Getenv("SUNO_TOKEN"); v != "" {
-		cfg.SunoJwt = v
-		cfg.AuthSource = "env:SUNO_TOKEN"
+		cfg.EnvSunoJwt = v
+		cfg.EnvAuthSource = "env:SUNO_TOKEN"
 	} else if v := os.Getenv("SUNO_JWT"); v != "" {
-		cfg.SunoJwt = v
-		cfg.AuthSource = "env:SUNO_JWT"
+		cfg.EnvSunoJwt = v
+		cfg.EnvAuthSource = "env:SUNO_JWT"
 	}
 
 	// Label config-file-derived credentials so doctor can distinguish
@@ -73,7 +86,7 @@ func Load(configPath string) (*Config, error) {
 	// config file path is exposed separately as report["config_path"], and
 	// embedding it in auth_source leaks the user's home directory through
 	// doctor's JSON envelope.
-	if cfg.AuthSource == "" && (cfg.AuthHeaderVal != "" || cfg.AccessToken != "") {
+	if cfg.AuthSource == "" && (cfg.AuthHeaderVal != "" || cfg.AccessToken != "" || cfg.ClerkClientCookieVal != "") {
 		cfg.AuthSource = "config"
 	}
 	if cfg.AuthSource == "" && cfg.SunoJwt != "" {
@@ -89,14 +102,14 @@ func Load(configPath string) (*Config, error) {
 
 func (c *Config) AuthHeader() string {
 	if c.AuthHeaderVal != "" {
+		if c.AuthSource == "" {
+			c.AuthSource = "config"
+		}
 		return c.AuthHeaderVal
 	}
-	// Env-var token wins over file-stored AccessToken (env > config convention).
 	if c.SunoJwt != "" {
-		// Preserve a specific env:<VAR> label already resolved in Load
-		// (env:SUNO_TOKEN / env:SUNO_JWT); only default it when unset.
-		if !strings.HasPrefix(c.AuthSource, "env:") {
-			c.AuthSource = "env:SUNO_TOKEN"
+		if c.AuthSource == "" {
+			c.AuthSource = "config"
 		}
 		return applyAuthFormat("Bearer {token}", map[string]string{
 			"jwt":        c.SunoJwt,
@@ -108,6 +121,19 @@ func (c *Config) AuthHeader() string {
 	if c.AccessToken != "" {
 		c.AuthSource = "oauth2"
 		return applyAuthFormat("Bearer {token}", map[string]string{"access_token": c.AccessToken, "token": c.AccessToken})
+	}
+	if c.EnvSunoJwt != "" {
+		if c.EnvAuthSource != "" {
+			c.AuthSource = c.EnvAuthSource
+		} else {
+			c.AuthSource = "env:SUNO_TOKEN"
+		}
+		return applyAuthFormat("Bearer {token}", map[string]string{
+			"jwt":        c.EnvSunoJwt,
+			"SUNO_TOKEN": c.EnvSunoJwt,
+			"SUNO_JWT":   c.EnvSunoJwt,
+			"token":      c.EnvSunoJwt,
+		})
 	}
 	return ""
 }
@@ -150,6 +176,11 @@ func (c *Config) ClearTokens() error {
 	c.SunoJwt = ""
 	c.ClerkClientCookieVal = ""
 	c.ClerkSessionIDVal = ""
+	// The cached studio cookie header holds durable suno.com session cookies the
+	// WAF cross-checks against the JWT; logout must revoke it (and its paired
+	// expiry) too, not leave it on disk. SaveSunoJWTOnly clears the same pair.
+	c.StudioCookieHeaderVal = ""
+	c.SunoJwtExpiry = 0
 	return c.save()
 }
 
