@@ -132,6 +132,48 @@ func (c *Config) AuthHeader() string {
 	return ""
 }
 
+func (c *Config) AppOnlyAuthHeader() string {
+	if c == nil || c.XBearerToken == "" {
+		return ""
+	}
+	return "Bearer " + c.XBearerToken
+}
+
+func (c *Config) UserContextAuthHeader() string {
+	if c == nil {
+		return ""
+	}
+	if c.XOauth2UserToken != "" {
+		return "Bearer " + c.XOauth2UserToken
+	}
+	if c.AccessToken != "" {
+		return "Bearer " + c.AccessToken
+	}
+	if c.AuthHeaderVal != "" {
+		return c.AuthHeaderVal
+	}
+	return ""
+}
+
+func (c *Config) UserContextAuthSource() string {
+	if c == nil {
+		return ""
+	}
+	switch {
+	case c.XOauth2UserToken != "":
+		if c.AuthSource != "" {
+			return c.AuthSource
+		}
+		return "config:oauth2_user_token"
+	case c.AccessToken != "":
+		return "config:access_token"
+	case c.AuthHeaderVal != "":
+		return "config:auth_header"
+	default:
+		return ""
+	}
+}
+
 func applyAuthFormat(format string, replacements map[string]string) string {
 	if format == "" {
 		return ""

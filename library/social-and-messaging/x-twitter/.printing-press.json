@@ -46,7 +46,7 @@
       "kind": "per_call",
       "required": false,
       "sensitive": true,
-      "description": "Optional OAuth2 user-context token. Unlocks v2 writes (post, like, repost, bookmark, follow, DM) and personal reads (me, mentions, home timeline, bookmarks). Sent as Authorization Bearer; obtain via auth login (OAuth2 + PKCE)."
+      "description": "Optional OAuth2 user-context token. Unlocks v2 writes (post, like, repost, bookmark, follow, DM) and personal reads (me, mentions, home timeline, bookmarks). Sent as Authorization Bearer; obtain from an OAuth2 authorization-code + PKCE flow and set/import explicitly. auth login --chrome is cookie-only for X Articles."
     }
   ],
   "auth_key_url": "https://console.x.com/",

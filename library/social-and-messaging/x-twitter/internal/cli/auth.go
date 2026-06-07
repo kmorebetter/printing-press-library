@@ -119,7 +119,7 @@ func newAuthStatusCmd(flags *rootFlags) *cobra.Command {
 				fmt.Fprintln(w, "")
 				fmt.Fprintln(w, "Set your token:")
 				fmt.Fprintln(w, "  export X_BEARER_TOKEN=\"your-token-here\" # App-only Bearer token for public reads (tweet/user lookup, recent search, lists, spaces). Required minimum - nothing works without it. Get one at https://console.x.com/ (app, then Keys and Tokens, then Bearer Token).")
-				fmt.Fprintln(w, "  export X_OAUTH2_USER_TOKEN=\"your-token-here\" # Optional OAuth2 user-context token. Unlocks v2 writes (post, like, repost, bookmark, follow, DM) and personal reads (me, mentions, home timeline, bookmarks). Sent as Authorization Bearer; obtain via auth login (OAuth2 + PKCE).")
+				fmt.Fprintln(w, "  export X_OAUTH2_USER_TOKEN=\"your-token-here\" # OAuth2 user-context token for v2 writes and personal reads. Obtain via OAuth2 authorization-code + PKCE and set/import explicitly; auth login --chrome is cookie-only for X Articles.")
 				fmt.Fprintf(w, "  x-twitter-pp-cli auth set-token <token>\n")
 				return authErr(fmt.Errorf("no credentials configured"))
 			}
