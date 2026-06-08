@@ -15,11 +15,12 @@
     "internal/cli/url_workflow.go",
     "internal/cli/performance_workflow.go",
     "internal/cli/timeline_export_workflow.go",
+    "internal/cli/expanded_workflows_test.go",
     "internal/cli/root.go",
     "internal/cli/which.go",
     "internal/store/store.go",
     "SKILL.md",
     "README.md"
   ],
-  "validated_outcome": "Focused tests cover monitor definitions/dedupe, URL query normalization, account profile normalization, brief construction, performance grouping, timeline export formatting, plus go test ./..."
+  "validated_outcome": "Focused tests cover monitor definitions/dedupe, preview duplicate checks, URL query normalization, account profile normalization, brief construction, performance grouping, timeline export formatting, plus go test ./..., go build, and strict SKILL.md verification."
 }
