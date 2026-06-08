@@ -2,6 +2,10 @@
 
 This file is maintained by printing-press-library release automation. Do not hand-edit release sections in normal PRs.
 
+## 2026.6.3 - 2026-06-08
+
+- feat(x-twitter): add raw API escape hatch (#1104).
+
 ## 2026.6.2 - 2026-06-08
 
 - feat(x-twitter): improve control-plane readiness (#1101).
