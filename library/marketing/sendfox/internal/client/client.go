@@ -12,14 +12,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/cliutil"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/config"
 	"io"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"sendfox-pp-cli/internal/cliutil"
-	"sendfox-pp-cli/internal/config"
 	"sort"
 	"strings"
 	"time"
@@ -511,7 +511,7 @@ func (c *Client) doInternal(ctx context.Context, method, path string, params map
 			req.Header.Del(BinaryResponseHeader)
 		}
 		if req.Header.Get("User-Agent") == "" {
-			req.Header.Set("User-Agent", "sendfox-pp-cli/1.0")
+			req.Header.Set("User-Agent", "github.com/mvanhorn/printing-press-library/library/marketing/sendfox/1.0")
 		}
 		// Go's net/http omits Accept by default; browsers, curl, and other
 		// stdlibs always send it. Fingerprint-checking WAFs (Imperva, Akamai,

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/store"
 	"github.com/spf13/cobra"
-	"sendfox-pp-cli/internal/store"
 )
 
 func newSyncHintTestStore(t *testing.T) *store.Store {

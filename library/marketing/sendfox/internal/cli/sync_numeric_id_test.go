@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sendfox-pp-cli/internal/store"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/store"
 )
 
 func TestSyncSingleObject_PreservesLargeIntegerResourceIDs(t *testing.T) {

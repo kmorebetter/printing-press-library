@@ -5,9 +5,9 @@ package cli
 
 import (
 	"fmt"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/config"
 	"github.com/spf13/cobra"
 	"os"
-	"sendfox-pp-cli/internal/config"
 )
 
 func newAuthCmd(flags *rootFlags) *cobra.Command {

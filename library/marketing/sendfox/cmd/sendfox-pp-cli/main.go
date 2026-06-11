@@ -6,7 +6,7 @@ package main
 import (
 	"os"
 
-	"sendfox-pp-cli/internal/cli"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/cli"
 )
 
 func main() {

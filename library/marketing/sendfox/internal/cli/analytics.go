@@ -9,8 +9,8 @@ import (
 	"io"
 	"sort"
 
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/store"
 	"github.com/spf13/cobra"
-	"sendfox-pp-cli/internal/store"
 )
 
 func newAnalyticsCmd(flags *rootFlags) *cobra.Command {

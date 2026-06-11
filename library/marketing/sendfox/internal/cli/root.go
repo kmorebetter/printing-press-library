@@ -12,9 +12,9 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/client"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/config"
 	"github.com/spf13/cobra"
-	"sendfox-pp-cli/internal/client"
-	"sendfox-pp-cli/internal/config"
 )
 
 var version = "1.0.0"

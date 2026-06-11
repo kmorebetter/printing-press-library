@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/client"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/cliutil"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/config"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/store"
 	"github.com/spf13/cobra"
-	"sendfox-pp-cli/internal/client"
-	"sendfox-pp-cli/internal/cliutil"
-	"sendfox-pp-cli/internal/config"
-	"sendfox-pp-cli/internal/store"
 )
 
 // looksLikeDoctorInterstitial reports whether the response body matches a known

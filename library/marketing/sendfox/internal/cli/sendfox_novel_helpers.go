@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"sendfox-pp-cli/internal/client"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/client"
 )
 
 type sendfoxCall struct {

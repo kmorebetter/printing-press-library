@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"sendfox-pp-cli/internal/config"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/config"
 )
 
 // recordingRoundTripper counts how many times its RoundTrip method is

@@ -1,4 +1,4 @@
-module sendfox-pp-cli
+module github.com/mvanhorn/printing-press-library/library/marketing/sendfox
 
 go 1.26.4
 

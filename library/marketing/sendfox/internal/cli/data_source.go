@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"sendfox-pp-cli/internal/client"
-	"sendfox-pp-cli/internal/store"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/client"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/store"
 )
 
 const networkFallbackReason = "api_unreachable"

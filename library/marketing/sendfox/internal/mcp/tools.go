@@ -15,12 +15,12 @@ import (
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"sendfox-pp-cli/internal/cli"
-	"sendfox-pp-cli/internal/client"
-	"sendfox-pp-cli/internal/cliutil"
-	"sendfox-pp-cli/internal/config"
-	"sendfox-pp-cli/internal/mcp/cobratree"
-	"sendfox-pp-cli/internal/store"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/cli"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/client"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/cliutil"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/config"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/mcp/cobratree"
+	"github.com/mvanhorn/printing-press-library/library/marketing/sendfox/internal/store"
 )
 
 // RegisterTools registers all API operations as MCP tools.
