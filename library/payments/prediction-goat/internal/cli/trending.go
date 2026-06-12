@@ -334,7 +334,10 @@ CAST(COALESCE(json_extract(data,'$.volume_24h_fp'),0) AS REAL) sort_value FROM r
 	case "resolving":
 		pm = strings.Replace(pm, pmVolume+" sort_value", "CAST(COALESCE(json_extract(data,'$.liquidityNum'),0) AS REAL) sort_value", 1)
 		ks = strings.Replace(ks, "CAST(COALESCE(json_extract(data,'$.volume_24h_fp'),0) AS REAL) sort_value", "CAST(COALESCE(json_extract(data,'$.liquidity_dollars'),0) AS REAL) sort_value", 1)
-		pm += " AND COALESCE(json_extract(data,'$.closed'),'false') != 'true'"
+		// json_extract returns integer 1 for JSON boolean true (and 0 for
+		// false), so a string comparison against 'true' never filters
+		// anything. Match both the boolean and string encodings.
+		pm += " AND COALESCE(json_extract(data,'$.closed'), 0) NOT IN (1, 'true')"
 		pm += " AND " + pmEnd + " BETWEEN ? AND ?"
 		ks += " AND COALESCE(json_extract(data,'$.status'),'active') NOT IN ('settled','closed','resolved','finalized')"
 		ks += " AND COALESCE(json_extract(data,'$.close_time'), json_extract(data,'$.expiration_time'), '') BETWEEN ? AND ?"
