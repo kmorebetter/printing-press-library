@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026.6.1 - 2026-06-12
+
+- Baseline release metadata added for this published CLI.
+
 ## 1.1.0 - 2026-06-12
 
 - Rebuilds the GA4 CLI to publish-grade structure with a typed `internal/ga4` Data/Admin/Funnel API layer and per-command CLI files.
