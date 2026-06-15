@@ -6273,6 +6273,41 @@
       }
     },
     {
+      "name": "lobsters",
+      "category": "developer-tools",
+      "api": "Lobsters",
+      "description": "Read-only JSON surfaces for Lobsters stories, tags, and comments.",
+      "search_terms": [
+        "lobsters",
+        "lobsters-pp-cli",
+        "Read Lobsters stories, tags, comments, and front-page/news feeds from public JSON endpoints.",
+        "Front page feed",
+        "page",
+        "Read the current Lobsters front page as structured JSON.",
+        "Newest stories feed",
+        "newest",
+        "Read newest Lobsters submissions by page.",
+        "Story comments",
+        "s",
+        "Fetch a story with its nested comment discussion."
+      ],
+      "path": "library/developer-tools/lobsters",
+      "printer": "hnshah",
+      "printer_name": "Hiten Shah",
+      "mcp": {
+        "binary": "lobsters-pp-mcp",
+        "transports": [
+          "stdio"
+        ],
+        "tool_count": 5,
+        "public_tool_count": 5,
+        "auth_type": "none",
+        "env_vars": [],
+        "mcp_ready": "full",
+        "spec_format": "openapi3"
+      }
+    },
+    {
       "name": "loopnet",
       "category": "commerce",
       "api": "Loopnet",
