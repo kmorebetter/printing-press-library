@@ -30,6 +30,7 @@ type reputationSummary struct {
 	ShopInfo          any              `json:"shop_info,omitempty"`
 	Settings          any              `json:"settings,omitempty"`
 	LocalReviewStats  *reviewStats     `json:"local_review_stats,omitempty"`
+	LocalReviewNote   string           `json:"local_review_note,omitempty"`
 }
 
 type reviewStats struct {
@@ -129,12 +130,18 @@ func newReputationSummaryCmd(flags *rootFlags) *cobra.Command {
 			if data, err := c.Get(ctx, reputationSettingsPath(), nil); err == nil {
 				out.Settings = decodeAny(data)
 			}
-			if db, err := openStoreForRead(ctx, "judge-me-pp-cli"); err == nil && db != nil {
+			if db, err := openStoreForRead(ctx, "judge-me-pp-cli"); err != nil {
+				out.LocalReviewNote = fmt.Sprintf("local review store unavailable: %v", err)
+			} else if db != nil {
 				defer db.Close()
 				if items, err := db.List("reviews", 0); err == nil {
 					st := reviewStatsFromRaw(items)
 					out.LocalReviewStats = &st
+				} else {
+					out.LocalReviewNote = fmt.Sprintf("local review stats unavailable: %v", err)
 				}
+			} else {
+				out.LocalReviewNote = "local review store not found; run 'judge-me-pp-cli sync --resources reviews' to include local review stats"
 			}
 			return printJSONFiltered(cmd.OutOrStdout(), out, flags)
 		},
@@ -538,7 +545,12 @@ func boolField(m map[string]any, key string) (bool, bool) {
 }
 func isVerified(v string) bool {
 	v = strings.ToLower(v)
-	return strings.Contains(v, "verified") || strings.Contains(v, "buyer") || v == "admin"
+	switch v {
+	case "confirmed-buyer", "buyer", "verified-purchase", "semi-verified-purchase", "admin":
+		return true
+	default:
+		return false
+	}
 }
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {

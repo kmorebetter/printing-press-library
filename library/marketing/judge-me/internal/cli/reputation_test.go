@@ -61,3 +61,16 @@ func TestReviewStatsFromNestedReviewsEnvelope(t *testing.T) {
 		t.Fatalf("unexpected stats: %+v", stats)
 	}
 }
+
+func TestIsVerifiedUsesExactJudgeMeStatuses(t *testing.T) {
+	for _, status := range []string{"confirmed-buyer", "buyer", "verified-purchase", "semi-verified-purchase", "admin"} {
+		if !isVerified(status) {
+			t.Fatalf("expected %q to be verified", status)
+		}
+	}
+	for _, status := range []string{"", "not-verified", "unverified", "non-buyer", "guest"} {
+		if isVerified(status) {
+			t.Fatalf("expected %q not to be verified", status)
+		}
+	}
+}
