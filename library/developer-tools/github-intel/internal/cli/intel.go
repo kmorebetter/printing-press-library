@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mvanhorn/printing-press-library/library/developer-tools/github-intel/internal/client"
+	"github.com/mvanhorn/printing-press-library/library/developer-tools/github-intel/internal/cliutil"
 	"github.com/spf13/cobra"
 )
 
@@ -91,7 +93,7 @@ func newReleasesIntelCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			items, err := fetchReleases(cmd, c, owner, repo, since, limit)
+			items, err := fetchReleases(cmd.Context(), c, owner, repo, since, limit)
 			if err != nil {
 				return err
 			}
@@ -143,7 +145,7 @@ func newRepoHealthCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			summary, err := fetchRepoSummary(cmd, c, owner, repo, true)
+			summary, err := fetchRepoSummary(cmd.Context(), c, owner, repo, true)
 			if err != nil {
 				return err
 			}
@@ -163,17 +165,21 @@ func newCompareCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var out []repoSummary
-			for _, arg := range args {
+			results, errs := cliutil.FanoutRun(cmd.Context(), args, func(arg string) string {
+				return arg
+			}, func(ctx context.Context, arg string) (repoSummary, error) {
 				owner, repo, err := splitRepo(arg)
 				if err != nil {
-					return err
+					return repoSummary{}, err
 				}
-				summary, err := fetchRepoSummary(cmd, c, owner, repo, true)
-				if err != nil {
-					return err
-				}
-				out = append(out, summary)
+				return fetchRepoSummary(ctx, c, owner, repo, true)
+			}, cliutil.WithConcurrency(min(len(args), 4)))
+			if len(errs) > 0 {
+				return fmt.Errorf("%s: %w", errs[0].Source, errs[0].Err)
+			}
+			out := make([]repoSummary, 0, len(results))
+			for _, result := range results {
+				out = append(out, result.Value)
 			}
 			sort.Slice(out, func(i, j int) bool {
 				if out[i].Stars == out[j].Stars {
@@ -229,8 +235,8 @@ func fetchTrending(cmd *cobra.Command, c *client.Client, language, topic, since 
 	return out, nil
 }
 
-func fetchRepoSummary(cmd *cobra.Command, c *client.Client, owner, repo string, includeRelease bool) (repoSummary, error) {
-	raw, err := c.Get(cmd.Context(), fmt.Sprintf("/repos/%s/%s", owner, repo), nil)
+func fetchRepoSummary(ctx context.Context, c *client.Client, owner, repo string, includeRelease bool) (repoSummary, error) {
+	raw, err := c.Get(ctx, fmt.Sprintf("/repos/%s/%s", owner, repo), nil)
 	if err != nil {
 		return repoSummary{}, err
 	}
@@ -239,7 +245,7 @@ func fetchRepoSummary(cmd *cobra.Command, c *client.Client, owner, repo string, 
 		return repoSummary{}, err
 	}
 	if includeRelease {
-		releases, err := fetchReleases(cmd, c, owner, repo, "", 1)
+		releases, err := fetchReleases(ctx, c, owner, repo, "", 1)
 		if err == nil && len(releases) > 0 {
 			summary.LastRelease = releases[0].TagName
 			summary.LastReleaseDate = releases[0].PublishedAt
@@ -248,37 +254,67 @@ func fetchRepoSummary(cmd *cobra.Command, c *client.Client, owner, repo string, 
 	return summary, nil
 }
 
-func fetchReleases(cmd *cobra.Command, c *client.Client, owner, repo, since string, limit int) ([]releaseSummary, error) {
+func fetchReleases(ctx context.Context, c *client.Client, owner, repo, since string, limit int) ([]releaseSummary, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	params := map[string]string{"per_page": strconv.Itoa(limit)}
-	raw, err := c.Get(cmd.Context(), fmt.Sprintf("/repos/%s/%s/releases", owner, repo), params)
-	if err != nil {
-		return nil, err
-	}
-	var releases []releaseSummary
-	if err := json.Unmarshal(raw, &releases); err != nil {
-		return nil, err
-	}
 	if since == "" {
+		params := map[string]string{"per_page": strconv.Itoa(limit)}
+		raw, err := c.Get(ctx, fmt.Sprintf("/repos/%s/%s/releases", owner, repo), params)
+		if err != nil {
+			return nil, err
+		}
+		var releases []releaseSummary
+		if err := json.Unmarshal(raw, &releases); err != nil {
+			return nil, err
+		}
 		return releases, nil
 	}
 	after, err := sinceTime(since, 30*24*time.Hour)
 	if err != nil {
 		return nil, err
 	}
-	filtered := releases[:0]
-	for _, release := range releases {
-		if release.PublishedAt == "" {
-			continue
+	const perPage = 100
+	out := make([]releaseSummary, 0, limit)
+	for page := 1; ; page++ {
+		params := map[string]string{
+			"per_page": strconv.Itoa(perPage),
+			"page":     strconv.Itoa(page),
 		}
-		published, err := time.Parse(time.RFC3339, release.PublishedAt)
-		if err == nil && !published.Before(after) {
-			filtered = append(filtered, release)
+		raw, err := c.Get(ctx, fmt.Sprintf("/repos/%s/%s/releases", owner, repo), params)
+		if err != nil {
+			return nil, err
+		}
+		var releases []releaseSummary
+		if err := json.Unmarshal(raw, &releases); err != nil {
+			return nil, err
+		}
+		if len(releases) == 0 {
+			break
+		}
+		pagePastWindow := false
+		for _, release := range releases {
+			if release.PublishedAt == "" {
+				continue
+			}
+			published, err := time.Parse(time.RFC3339, release.PublishedAt)
+			if err != nil {
+				continue
+			}
+			if published.Before(after) {
+				pagePastWindow = true
+				continue
+			}
+			out = append(out, release)
+			if len(out) >= limit {
+				return out, nil
+			}
+		}
+		if len(releases) < perPage || pagePastWindow {
+			break
 		}
 	}
-	return filtered, nil
+	return out, nil
 }
 
 func fetchAdvisories(cmd *cobra.Command, c *client.Client, ecosystem, pkg, severity, since string, limit int) ([]advisorySummary, error) {

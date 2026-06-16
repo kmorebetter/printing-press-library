@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -76,26 +75,6 @@ func (c *Config) AuthHeader() string {
 	return ""
 }
 
-func applyAuthFormat(format string, replacements map[string]string) string {
-	if format == "" {
-		return ""
-	}
-	for key, value := range replacements {
-		format = strings.ReplaceAll(format, "{"+key+"}", value)
-	}
-	if strings.Contains(format, "{") {
-		return ""
-	}
-	return format
-}
-
-func (c *Config) markEnvOverride(field string) {
-	if c.envOverrides == nil {
-		c.envOverrides = map[string]bool{}
-	}
-	c.envOverrides[field] = true
-}
-
 // cloneStringMap returns an independent copy of m (nil stays nil). The fileConfig
 // snapshot must not share reference-type map fields (such as Headers) with the
 // live config, or a later mutation to one would silently track in the other.
@@ -120,48 +99,3 @@ func (c *Config) snapshotFileConfig() {
 	snapshot.Headers = cloneStringMap(c.Headers)
 	c.fileConfig = &snapshot
 }
-
-func (c *Config) configForSave() Config {
-	out := *c
-	if c.fileConfig != nil {
-	}
-	out.envOverrides = nil
-	out.fileConfig = nil
-	return out
-}
-
-func (c *Config) updateFileConfigField(field string) {
-	if c.fileConfig == nil || c.envOverrides[field] {
-		return
-	}
-	switch field {
-	case "AuthHeaderVal":
-		c.fileConfig.AuthHeaderVal = c.AuthHeaderVal
-	}
-}
-
-func (c *Config) save() error {
-	dir := filepath.Dir(c.Path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("creating config dir: %w", err)
-	}
-	persisted := c.configForSave()
-	data, err := toml.Marshal(persisted)
-	if err != nil {
-		return fmt.Errorf("marshaling config: %w", err)
-	}
-	if err := os.WriteFile(c.Path, data, 0o600); err != nil {
-		return err
-	}
-	c.fileConfig = &persisted
-	c.fileConfig.envOverrides = nil
-	c.fileConfig.fileConfig = nil
-	// persisted shares its map fields with c (configForSave shallow-copies *c),
-	// so isolate the stored fileConfig the same way snapshotFileConfig does;
-	// otherwise later mutations to c's maps leak into the on-disk snapshot.
-	c.fileConfig.Headers = cloneStringMap(c.fileConfig.Headers)
-	return nil
-}
-
-// Ensure strings import is used
-var _ = strings.ReplaceAll
