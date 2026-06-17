@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "2026.6.1"
+var version = "2026.6.2"
 
 type rootFlags struct {
 	asJSON        bool
@@ -45,6 +45,7 @@ type rootFlags struct {
 	rateLimit           float64
 	dataSource          string
 	freshnessMeta       any
+	errorWritten        bool
 
 	// deliverBuf captures command output when --deliver is set to a
 	// non-stdout sink. Flushed to the sink after Execute returns.
@@ -105,7 +106,14 @@ func Execute() error {
 		// runs. Without this wrap, ExitCode() falls through to the
 		// default and emits 1 — clobbering the conventional code-2 for
 		// usage errors that the helpers.go contract already promises.
-		return usageErr(err)
+		err = usageErr(err)
+	}
+	if err != nil {
+		if flags.asJSON && !flags.errorWritten {
+			writeCLIErrorEnvelope(&flags, err, ExitCode(err))
+		} else if !flags.asJSON {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 	}
 	return err
 }
@@ -165,6 +173,7 @@ Highlights (not in the official API docs):
   • stale   Find issues that haven't been touched in N days, grouped by team and project.
   • slipped   Show what carried over from last cycle into this cycle, grouped by team and reason heuristic.
   • blocking   Show issues you are blocking — sorted by downstream impact (downstream count × downstream priority).
+  • issues search   Search synced Linear issues by text before creating a new ticket; team-scoped alias for similar duplicate checks.
   • similar   Find issues that look like duplicates of a query string using offline FTS5 fuzzy matching.
   • velocity   Track sprint completion rates over the last N cycles to spot productivity trends.
   • initiatives health   Rolled-up portfolio view per initiative: child project progress, milestone target-vs-projected dates, slippage flags.
@@ -175,8 +184,9 @@ Highlights (not in the official API docs):
 Agent mode: add --agent to any command for JSON output + non-interactive mode.
 Health check: run 'linear-pp-cli doctor' to verify auth and connectivity.
 See README.md or the bundled SKILL.md for recipes.`,
-		SilenceUsage: true,
-		Version:      version,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Version:       version,
 	}
 	rootCmd.SetVersionTemplate("linear-pp-cli {{ .Version }}\n")
 
@@ -306,6 +316,9 @@ See README.md or the bundled SKILL.md for recipes.`,
 
 	// v3-ported top-level commands
 	rootCmd.AddCommand(newIssuesCmd(flags))
+	rootCmd.AddCommand(newCommentsCmd(flags))
+	rootCmd.AddCommand(newDocumentsCmd(flags))
+	rootCmd.AddCommand(newLabelsCmd(flags))
 	rootCmd.AddCommand(newMeCmd(flags))
 	rootCmd.AddCommand(newTodayCmd(flags))
 	rootCmd.AddCommand(newBottleneckCmd(flags))
