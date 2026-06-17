@@ -2048,6 +2048,51 @@
       }
     },
     {
+      "name": "braze",
+      "category": "marketing",
+      "api": "Braze Read",
+      "description": "Read-first Braze REST API surface for marketing analytics, campaign inspection, content assets, and catalog lookup.",
+      "search_terms": [
+        "braze",
+        "Braze Read",
+        "braze-pp-cli",
+        "Read-first Braze REST API surface for marketing analytics, campaign inspection, content assets, and catalog lookup.",
+        "Local SQLite mirror",
+        "sync",
+        "Sync read endpoints into a local SQLite store for offline search, joins, and repeatable agent analysis.",
+        "Full-text search across API data",
+        "search",
+        "Search live or locally synced API records from one agent-friendly command.",
+        "SQL analytics on synced records",
+        "analytics",
+        "Run read-only SQL against the local store for compound questions the upstream API does not expose directly.",
+        "Agent command discovery",
+        "which",
+        "Map natural-language capabilities to the exact CLI command path before spending tokens on trial and error."
+      ],
+      "path": "library/marketing/braze",
+      "printer": "debgotwired",
+      "printer_name": "Deb Mukherjee",
+      "creator": {
+        "handle": "debgotwired",
+        "name": "Deb Mukherjee"
+      },
+      "mcp": {
+        "binary": "braze-pp-mcp",
+        "transports": [
+          "stdio"
+        ],
+        "tool_count": 27,
+        "public_tool_count": 0,
+        "auth_type": "bearer_token",
+        "env_vars": [
+          "BRAZE_BEARER_AUTH"
+        ],
+        "mcp_ready": "full",
+        "spec_format": "openapi3"
+      }
+    },
+    {
       "name": "breezedoc",
       "category": "productivity",
       "api": "BreezeDoc",
@@ -2164,6 +2209,51 @@
         "auth_type": "bearer_token",
         "env_vars": [
           "CAL_COM_TOKEN"
+        ],
+        "mcp_ready": "full",
+        "spec_format": "openapi3"
+      }
+    },
+    {
+      "name": "calendly",
+      "category": "productivity",
+      "api": "Calendly Read",
+      "description": "Read-first Calendly API surface for scheduling, availability, event, invitee, and webhook inspection.",
+      "search_terms": [
+        "calendly",
+        "Calendly Read",
+        "calendly-pp-cli",
+        "Read-first Calendly API surface for scheduling, availability, event, invitee, and webhook inspection.",
+        "Local SQLite mirror",
+        "sync",
+        "Sync read endpoints into a local SQLite store for offline search, joins, and repeatable agent analysis.",
+        "Full-text search across API data",
+        "search",
+        "Search live or locally synced API records from one agent-friendly command.",
+        "SQL analytics on synced records",
+        "analytics",
+        "Run read-only SQL against the local store for compound questions the upstream API does not expose directly.",
+        "Agent command discovery",
+        "which",
+        "Map natural-language capabilities to the exact CLI command path before spending tokens on trial and error."
+      ],
+      "path": "library/productivity/calendly",
+      "printer": "debgotwired",
+      "printer_name": "Deb Mukherjee",
+      "creator": {
+        "handle": "debgotwired",
+        "name": "Deb Mukherjee"
+      },
+      "mcp": {
+        "binary": "calendly-pp-mcp",
+        "transports": [
+          "stdio"
+        ],
+        "tool_count": 19,
+        "public_tool_count": 0,
+        "auth_type": "bearer_token",
+        "env_vars": [
+          "CALENDLY_BEARER_AUTH"
         ],
         "mcp_ready": "full",
         "spec_format": "openapi3"
@@ -5831,6 +5921,51 @@
       }
     },
     {
+      "name": "help-scout",
+      "category": "sales-and-crm",
+      "api": "Help Scout Inbox",
+      "description": "Read-first Help Scout Inbox API surface for support operations and agent workflows.",
+      "search_terms": [
+        "help-scout",
+        "Help Scout Inbox",
+        "help-scout-pp-cli",
+        "Read-first Help Scout Inbox API surface for support operations and agent workflows.",
+        "Local SQLite mirror",
+        "sync",
+        "Sync read endpoints into a local SQLite store for offline search, joins, and repeatable agent analysis.",
+        "Full-text search across API data",
+        "search",
+        "Search live or locally synced API records from one agent-friendly command.",
+        "SQL analytics on synced records",
+        "analytics",
+        "Run read-only SQL against the local store for compound questions the upstream API does not expose directly.",
+        "Agent command discovery",
+        "which",
+        "Map natural-language capabilities to the exact CLI command path before spending tokens on trial and error."
+      ],
+      "path": "library/sales-and-crm/help-scout",
+      "printer": "debgotwired",
+      "printer_name": "Deb Mukherjee",
+      "creator": {
+        "handle": "debgotwired",
+        "name": "Deb Mukherjee"
+      },
+      "mcp": {
+        "binary": "help-scout-pp-mcp",
+        "transports": [
+          "stdio"
+        ],
+        "tool_count": 22,
+        "public_tool_count": 0,
+        "auth_type": "bearer_token",
+        "env_vars": [
+          "HELP_SCOUT_BEARER_AUTH"
+        ],
+        "mcp_ready": "full",
+        "spec_format": "openapi3"
+      }
+    },
+    {
       "name": "here-now",
       "category": "cloud",
       "api": "here.now",
@@ -8951,6 +9086,49 @@
       }
     },
     {
+      "name": "pipedrive",
+      "category": "sales-and-crm",
+      "api": "Pipedrive",
+      "description": "CRM for sales teams - deals, contacts, pipelines, activities, and organizations",
+      "search_terms": [
+        "pipedrive",
+        "pipedrive-pp-cli",
+        "CRM for sales teams - deals, contacts, pipelines, activities, and organizations",
+        "Local SQLite mirror",
+        "sync",
+        "Sync read endpoints into a local SQLite store for offline search, joins, and repeatable agent analysis.",
+        "Full-text search across API data",
+        "search",
+        "Search live or locally synced API records from one agent-friendly command.",
+        "SQL analytics on synced records",
+        "analytics",
+        "Run read-only SQL against the local store for compound questions the upstream API does not expose directly.",
+        "Agent command discovery",
+        "which",
+        "Map natural-language capabilities to the exact CLI command path before spending tokens on trial and error."
+      ],
+      "path": "library/sales-and-crm/pipedrive",
+      "printer": "debgotwired",
+      "printer_name": "Deb Mukherjee",
+      "creator": {
+        "handle": "debgotwired",
+        "name": "Deb Mukherjee"
+      },
+      "mcp": {
+        "binary": "pipedrive-pp-mcp",
+        "transports": [
+          "stdio"
+        ],
+        "tool_count": 213,
+        "public_tool_count": 0,
+        "auth_type": "api_key",
+        "env_vars": [
+          "PIPEDRIVE_API_KEY"
+        ],
+        "mcp_ready": "full"
+      }
+    },
+    {
       "name": "plane",
       "category": "project-management",
       "api": "Plane",
@@ -10422,6 +10600,51 @@
         "env_vars": [],
         "mcp_ready": "full",
         "spec_format": "sqlite"
+      }
+    },
+    {
+      "name": "salesloft",
+      "category": "sales-and-crm",
+      "api": "Salesloft Read",
+      "description": "Read-first Salesloft API surface for agent workflows, based on the public Salesloft v2 developer documentation.",
+      "search_terms": [
+        "salesloft",
+        "Salesloft Read",
+        "salesloft-pp-cli",
+        "Read-first Salesloft API surface for agent workflows, based on the public Salesloft v2 developer documentation.",
+        "Local SQLite mirror",
+        "sync",
+        "Sync read endpoints into a local SQLite store for offline search, joins, and repeatable agent analysis.",
+        "Full-text search across API data",
+        "search",
+        "Search live or locally synced API records from one agent-friendly command.",
+        "SQL analytics on synced records",
+        "analytics",
+        "Run read-only SQL against the local store for compound questions the upstream API does not expose directly.",
+        "Agent command discovery",
+        "which",
+        "Map natural-language capabilities to the exact CLI command path before spending tokens on trial and error."
+      ],
+      "path": "library/sales-and-crm/salesloft",
+      "printer": "debgotwired",
+      "printer_name": "Deb Mukherjee",
+      "creator": {
+        "handle": "debgotwired",
+        "name": "Deb Mukherjee"
+      },
+      "mcp": {
+        "binary": "salesloft-pp-mcp",
+        "transports": [
+          "stdio"
+        ],
+        "tool_count": 20,
+        "public_tool_count": 0,
+        "auth_type": "bearer_token",
+        "env_vars": [
+          "SALESLOFT_BEARER_AUTH"
+        ],
+        "mcp_ready": "full",
+        "spec_format": "openapi3"
       }
     },
     {
