@@ -31,7 +31,8 @@
     "copper_user_email": {
       "type": "string",
       "title": "COPPER_USER_EMAIL",
-      "description": "Optional. Sets COPPER_USER_EMAIL for the Copper MCP server."
+      "description": "Your Copper account email address. Required — Copper's API sends this as X-PW-UserEmail on every request; omitting it yields 401/403 errors.",
+      "required": true
     }
   },
   "compatibility": {

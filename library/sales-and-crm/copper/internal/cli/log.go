@@ -120,18 +120,22 @@ func newNovelLogCmd(flags *rootFlags) *cobra.Command {
 			body = buildActivityBody(ref, flagNote, typeID)
 
 			res := logResult{Action: logActionOf(logType), Type: logType, Parent: ref, Body: body}
-			if logType == "fix" {
-				// Copper activities are immutable: delete then recreate.
-				if _, status, derr := c.Delete(cmd.Context(), "/activities/"+flagActivity); derr != nil || (status < 200 || status >= 300) {
-					return apiErr(fmt.Errorf("deleting activity %s: status %d: %v", flagActivity, status, derr))
-				}
-				res.DeletedID = flagActivity
-			}
+			// Create the replacement FIRST. Copper activities are immutable, so
+			// "fix" is a delete+recreate — but deleting before the create
+			// succeeds would irrecoverably lose the original if the POST fails
+			// (rate limit, transient 5xx, cancellation). Create first, then
+			// delete the old one only after the new one is persisted.
 			created, status, perr := c.Post(cmd.Context(), "/activities", body)
 			if perr != nil || status < 200 || status >= 300 {
 				return apiErr(fmt.Errorf("creating activity: status %d: %v", status, perr))
 			}
 			res.CreatedRaw = created
+			if logType == "fix" {
+				if _, status, derr := c.Delete(cmd.Context(), "/activities/"+flagActivity); derr != nil || (status < 200 || status >= 300) {
+					return apiErr(fmt.Errorf("replacement created but could not delete original activity %s: status %d: %v", flagActivity, status, derr))
+				}
+				res.DeletedID = flagActivity
+			}
 			return renderLog(cmd.OutOrStdout(), res, flags)
 		},
 	}
