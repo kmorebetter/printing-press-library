@@ -32,69 +32,90 @@ type dupeGroup struct {
 }
 
 func newNovelDedupeCmd(flags *rootFlags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "dedupe",
+		Short:       "Local SQLite self-join surfacing people or leads that share an email, name, or company.",
+		Annotations: map[string]string{"mcp:read-only": "true"},
+		RunE:        parentNoSubcommandRunE(flags),
+	}
+	cmd.AddCommand(newDedupePeopleCmd(flags))
+	cmd.AddCommand(newDedupeLeadsCmd(flags))
+	return cmd
+}
+
+// newDedupePeopleCmd builds `dedupe people`. Literal Use string so static
+// SKILL verifiers resolve `dedupe people --on email` to this exact path.
+func newDedupePeopleCmd(flags *rootFlags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "people",
+		Short:       "Find people that share an email, name, or company",
+		Example:     "people --on email --agent",
+		Annotations: map[string]string{"mcp:read-only": "true"},
+	}
+	bindDedupeEntity(cmd, flags, "people")
+	return cmd
+}
+
+// newDedupeLeadsCmd builds `dedupe leads`.
+func newDedupeLeadsCmd(flags *rootFlags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:         "leads",
+		Short:       "Find leads that share an email, name, or company",
+		Example:     "leads --on email --agent",
+		Annotations: map[string]string{"mcp:read-only": "true"},
+	}
+	bindDedupeEntity(cmd, flags, "leads")
+	return cmd
+}
+
+// bindDedupeEntity wires the shared --on/--db flags and RunE for a dedupe
+// entity subcommand.
+func bindDedupeEntity(cmd *cobra.Command, flags *rootFlags, entity string) {
 	var flagOn string
 	var flagDB string
 
-	cmd := &cobra.Command{
-		Use:         "dedupe [people|leads]",
-		Short:       "Local SQLite self-join surfacing people or leads that share an email, name, or company.",
-		Example:     "people --on email --agent",
-		Annotations: map[string]string{"mcp:read-only": "true"},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 && cmd.Flags().NFlag() == 0 {
-				return cmd.Help()
-			}
-			if dryRunOK(flags) {
-				return nil
-			}
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if dryRunOK(flags) {
+			return nil
+		}
 
-			entity := "people"
-			if len(args) > 0 {
-				entity = args[0]
-			}
-			if entity != "people" && entity != "leads" {
-				_ = cmd.Usage()
-				return usageErr(fmt.Errorf("entity must be people or leads (got %q)", entity))
-			}
-			on := flagOn
-			if on == "" {
-				on = "email"
-			}
-			switch on {
-			case "email", "name", "company":
-			default:
-				_ = cmd.Usage()
-				return usageErr(fmt.Errorf("--on must be one of: email, name, company (got %q)", on))
-			}
+		on := flagOn
+		if on == "" {
+			on = "email"
+		}
+		switch on {
+		case "email", "name", "company":
+		default:
+			_ = cmd.Usage()
+			return usageErr(fmt.Errorf("--on must be one of: email, name, company (got %q)", on))
+		}
 
-			dbPath := flagDB
-			if dbPath == "" {
-				dbPath = defaultDBPath("copper-pp-cli")
+		dbPath := flagDB
+		if dbPath == "" {
+			dbPath = defaultDBPath("copper-pp-cli")
+		}
+		if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+			fmt.Fprintf(cmd.ErrOrStderr(), "no local mirror at %s\nrun: copper-pp-cli sync --resources %s --db %s\n", dbPath, entity, dbPath)
+			if flags.asJSON || flags.agent {
+				fmt.Fprintln(cmd.OutOrStdout(), "[]")
 			}
-			if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-				fmt.Fprintf(cmd.ErrOrStderr(), "no local mirror at %s\nrun: copper-pp-cli sync --resources %s --db %s\n", dbPath, entity, dbPath)
-				if flags.asJSON || flags.agent {
-					fmt.Fprintln(cmd.OutOrStdout(), "[]")
-				}
-				return nil
-			}
+			return nil
+		}
 
-			db, err := store.OpenWithContext(cmd.Context(), dbPath)
-			if err != nil {
-				return fmt.Errorf("opening local database: %w\nRun 'copper-pp-cli sync' first.", err)
-			}
-			defer db.Close()
+		db, err := store.OpenWithContext(cmd.Context(), dbPath)
+		if err != nil {
+			return fmt.Errorf("opening local database: %w\nRun 'copper-pp-cli sync' first.", err)
+		}
+		defer db.Close()
 
-			groups, err := runDedupe(cmd.Context(), db.DB(), entity, on)
-			if err != nil {
-				return err
-			}
-			return renderDedupe(cmd.OutOrStdout(), groups, flags)
-		},
+		groups, err := runDedupe(cmd.Context(), db.DB(), entity, on)
+		if err != nil {
+			return err
+		}
+		return renderDedupe(cmd.OutOrStdout(), groups, flags)
 	}
 	cmd.Flags().StringVar(&flagOn, "on", "email", "Dedupe key: email | name | company")
 	cmd.Flags().StringVar(&flagDB, "db", "", "SQLite database file path (default: resolved data directory data.db)")
-	return cmd
 }
 
 // dedupeKeyExpr maps an --on choice to the SQL key expression for an entity.

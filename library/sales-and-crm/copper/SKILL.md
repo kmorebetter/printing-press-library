@@ -260,10 +260,10 @@ Commit view per rep without a spreadsheet pivot.
 ### Sweep then bulk-reassign cold deals
 
 ```bash
-copper-pp-cli stale --days 30 --json > cold.json && copper-pp-cli bulk reassign --query cold.json --set assignee_id=42 --dry-run
+copper-pp-cli stale --days 30 --by assignee --agent
 ```
 
-Find cold deals, preview a mass owner change before applying.
+List cold deals grouped by owner. Save the JSON, then feed the ids into the bulk reassign command (with --set assignee_id=<id>) to mass-reassign — preview with --dry-run before applying.
 
 ### Idempotent contact import
 
