@@ -61,6 +61,16 @@ npx -y @mvanhorn/printing-press-library search flights --json
 npx -y @mvanhorn/printing-press-library list --category travel --json
 ```
 
+Catalog JSON includes release metadata when a CLI has a `.printing-press-release.json` ledger entry. Agents can compare a local binary against the remote catalog without repo inspection:
+
+```bash
+substack-pp-cli --version
+npx -y @mvanhorn/printing-press-library search substack --json
+npx -y @mvanhorn/printing-press-library update substack --bin-dir ~/.local/bin
+```
+
+Read `release.version`, `release.cli_name`, `release.released_at`, and `release.source_commit` from `search --json` or `list --json`. Fall back to `go version -m` or direct repo inspection only when `release` is missing or the local version string looks suspicious.
+
 ## Installing CLIs and skills
 
 Every install pulls down the Go binary **and** the focused skill in one shot. Use `--cli-only` or `--skill-only` (see [Options](#options)) if you want just one half.

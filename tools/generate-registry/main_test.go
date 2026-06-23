@@ -408,6 +408,40 @@ func TestSearchTerms(t *testing.T) {
 	}
 }
 
+func TestBuildEntriesIncludesReleaseMetadataFromReleaseFiles(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoRoot := filepath.Clean(filepath.Join(cwd, "..", ".."))
+	if err := os.Chdir(repoRoot); err != nil {
+		t.Fatalf("chdir repo root: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+
+	generatedEntries, err := buildEntries(libraryDir, loadExistingEntries(registryPath))
+	if err != nil {
+		t.Fatalf("build entries: %v", err)
+	}
+
+	checked := 0
+	var substack *Release
+	for _, generated := range generatedEntries {
+		if generated.Release != nil {
+			checked++
+		}
+		if generated.Name == "substack" {
+			substack = generated.Release
+		}
+	}
+	if checked == 0 {
+		t.Fatal("expected at least one .printing-press-release.json-backed registry entry")
+	}
+	if substack == nil || substack.CLIName != "substack-pp-cli" || strings.TrimSpace(substack.Version) == "" {
+		t.Fatalf("generated substack release = %+v, want substack-pp-cli with non-empty version", substack)
+	}
+}
+
 // TestValidateEntries exercises the source-only validation that backs the
 // --validate flag. The required-field set must stay in lockstep with the
 // npm installer's parseRegistry contract — any new requiredString check
@@ -523,6 +557,31 @@ func TestValidateEntries(t *testing.T) {
 				{Name: "x", Category: "tools", API: "X", Description: "Has desc.", Path: "library/tools/x", MCP: mcpOK},
 			},
 			wantOK: true,
+		},
+		{
+			name: "valid release block passes",
+			entries: []RegistryEntry{
+				{
+					Name: "x", Category: "tools", API: "X", Description: "Has desc.", Path: "library/tools/x",
+					Release: &Release{CLIName: "x-pp-cli", Version: "2026.6.23", ReleasedAt: "2026-06-23T00:00:00Z", SourceCommit: "abc123"},
+				},
+			},
+			wantOK: true,
+		},
+		{
+			name: "release block required fields fail when blank",
+			entries: []RegistryEntry{
+				{
+					Name: "x", Category: "tools", API: "X", Description: "Has desc.", Path: "library/tools/x",
+					Release: &Release{CLIName: " ", Version: "", ReleasedAt: "	", SourceCommit: "\n"},
+				},
+			},
+			wantSubstrs: []string{
+				"x: release.cli_name is empty",
+				"x: release.version is empty",
+				"x: release.released_at is empty",
+				"x: release.source_commit is empty",
+			},
 		},
 		{
 			name: "unnamed entry reports under (unnamed) prefix",

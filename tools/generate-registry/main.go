@@ -71,6 +71,7 @@ type RegistryEntry struct {
 	Description string   `json:"description"`
 	SearchTerms []string `json:"search_terms,omitempty"`
 	Path        string   `json:"path"`
+	Release     *Release `json:"release,omitempty"`
 	sourceAPI   string
 	// Printer is the GitHub @handle of the human who originally ran the
 	// press for this CLI. Sourced verbatim from .printing-press.json's
@@ -124,6 +125,17 @@ type MCPBlock struct {
 	EnvVars         []string `json:"env_vars"`
 	MCPReady        string   `json:"mcp_ready,omitempty"`
 	SpecFormat      string   `json:"spec_format,omitempty"`
+}
+
+// Release is the catalog-facing subset of a CLI's
+// .printing-press-release.json. It lets search/list JSON consumers compare an
+// installed binary's --version output with the current catalog version without
+// falling back to go module build metadata or repo inspection.
+type Release struct {
+	CLIName      string `json:"cli_name"`
+	Version      string `json:"version"`
+	ReleasedAt   string `json:"released_at"`
+	SourceCommit string `json:"source_commit"`
 }
 
 // printingPressManifest captures the subset of .printing-press.json fields
@@ -408,6 +420,11 @@ func buildEntry(dir, category, slug string, existing map[string]RegistryEntry) (
 		pp.CatalogDescription,
 	)
 	entry.SearchTerms = searchTerms(pp)
+	if release, err := readRelease(filepath.Join(dir, ".printing-press-release.json")); err != nil {
+		return nil, err
+	} else if release != nil {
+		entry.Release = release
+	}
 
 	// MCP block preference: derive from .printing-press.json when it
 	// declares mcp_binary (the modern, authoritative source) > preserve
@@ -429,6 +446,21 @@ func buildEntry(dir, category, slug string, existing map[string]RegistryEntry) (
 	}
 
 	return &entry, nil
+}
+
+func readRelease(path string) (*Release, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	var release Release
+	if err := json.Unmarshal(data, &release); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return &release, nil
 }
 
 func repairDuplicateAPIDisplayNames(entries []RegistryEntry) {
@@ -573,6 +605,20 @@ func validateEntries(entries []RegistryEntry) []string {
 			}
 			if isBlank(e.MCP.AuthType) {
 				errs = append(errs, fmt.Sprintf("%s: mcp.auth_type is empty", slug))
+			}
+		}
+		if e.Release != nil {
+			if isBlank(e.Release.CLIName) {
+				errs = append(errs, fmt.Sprintf("%s: release.cli_name is empty", slug))
+			}
+			if isBlank(e.Release.Version) {
+				errs = append(errs, fmt.Sprintf("%s: release.version is empty", slug))
+			}
+			if isBlank(e.Release.ReleasedAt) {
+				errs = append(errs, fmt.Sprintf("%s: release.released_at is empty", slug))
+			}
+			if isBlank(e.Release.SourceCommit) {
+				errs = append(errs, fmt.Sprintf("%s: release.source_commit is empty", slug))
 			}
 		}
 	}
