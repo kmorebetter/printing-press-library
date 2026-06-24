@@ -111,7 +111,19 @@ func runForecast(ctx context.Context, db *sql.DB, opts forecastOpts) ([]forecast
 	case "assignee":
 		groupExpr = "json_extract(data,'$.assignee_id')"
 	case "close-month":
-		groupExpr = "substr(close_date, 1, 7)"
+		// close_date arrives in several shapes depending on Copper account /
+		// API version: MM/DD/YYYY text (observed), a Unix-timestamp string, or
+		// ISO YYYY-MM-DD. Normalize each to a YYYY-MM bucket; substr(1,7) alone
+		// would mis-bucket all but the ISO case.
+		groupExpr = `CASE
+			WHEN close_date GLOB '[0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9]'
+				THEN substr(close_date,7,4) || '-' || substr(close_date,1,2)
+			WHEN close_date GLOB '[0-9]*' AND length(close_date) >= 10 AND instr(close_date,'-') = 0 AND instr(close_date,'/') = 0
+				THEN strftime('%Y-%m', datetime(CAST(close_date AS INTEGER), 'unixepoch'))
+			WHEN length(close_date) >= 7 AND substr(close_date,5,1) = '-'
+				THEN substr(close_date,1,7)
+			ELSE close_date
+		END`
 	default: // stage
 		groupExpr = "pipeline_stage_id"
 	}

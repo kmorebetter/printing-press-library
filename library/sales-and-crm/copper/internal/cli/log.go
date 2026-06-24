@@ -107,17 +107,40 @@ func newNovelLogCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Resolve non-note types by name from the live type list; fall back
-			// to Note(0) on any lookup failure.
+			// Resolve the activity type. For "fix" we must preserve the original
+			// activity's type so a Call/Meeting is not silently re-typed to Note
+			// by the delete+recreate; for call/meeting we resolve by name. Fall
+			// back to Note(0) on any lookup failure.
 			typeID := knownNoteTypeID
-			if logType == "call" || logType == "meeting" {
+			var fixType map[string]any
+			switch logType {
+			case "fix":
+				if orig, oerr := c.Get(cmd.Context(), "/activities/"+flagActivity, nil); oerr == nil {
+					var od map[string]any
+					if json.Unmarshal(orig, &od) == nil {
+						if t, ok := od["type"].(map[string]any); ok && t["id"] != nil {
+							fixType = map[string]any{"category": "user", "id": t["id"]}
+							if cat, ok := t["category"].(string); ok && cat != "" {
+								fixType["category"] = cat
+							}
+						}
+					}
+				}
+				if fixType == nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not read original activity %s type; defaulting to Note(0)\n", flagActivity)
+				}
+			case "call", "meeting":
 				if resolved, ok := resolveActivityType(cmd.Context(), c, logType); ok {
 					typeID = resolved
 				} else {
 					fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not resolve %q activity type; defaulting to Note(0)\n", logType)
 				}
 			}
-			body = buildActivityBody(ref, flagNote, typeID)
+			if fixType != nil {
+				body = buildActivityBodyWithType(ref, flagNote, fixType)
+			} else {
+				body = buildActivityBody(ref, flagNote, typeID)
+			}
 
 			res := logResult{Action: logActionOf(logType), Type: logType, Parent: ref, Body: body}
 			// Create the replacement FIRST. Copper activities are immutable, so
@@ -163,9 +186,16 @@ func deletedIDFor(logType, activity string) string {
 // buildActivityBody constructs the Copper /activities POST body for a parent
 // reference, note text, and resolved activity-type id.
 func buildActivityBody(ref entityRef, note string, typeID int) map[string]any {
+	return buildActivityBodyWithType(ref, note, map[string]any{"category": "user", "id": typeID})
+}
+
+// buildActivityBodyWithType builds the POST body with an explicit type object,
+// used by `log fix` to preserve the original activity's type instead of
+// defaulting to Note.
+func buildActivityBodyWithType(ref entityRef, note string, typeObj map[string]any) map[string]any {
 	return map[string]any{
 		"parent":        map[string]any{"type": ref.Type, "id": ref.ID},
-		"type":          map[string]any{"category": "user", "id": typeID},
+		"type":          typeObj,
 		"details":       note,
 		"activity_date": time.Now().Unix(),
 	}

@@ -151,3 +151,19 @@ func TestNovelUpsertPreviewNoNetwork(t *testing.T) {
 		t.Errorf("preview output missing PREVIEW marker: %q", out.String())
 	}
 }
+
+// TestNovelUpsertPersonRejectsNonEmailMatch verifies person upsert refuses a
+// non-email match key instead of silently create-only (duplicate) behavior.
+func TestNovelUpsertPersonRejectsNonEmailMatch(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "rows.json")
+	if err := os.WriteFile(f, []byte(`[{"name":"Ann"}]`), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	cmd := RootCmd()
+	cmd.SetArgs([]string{"upsert", "person", "--match", "name", "--file", f})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("upsert person --match name = nil error, want rejection")
+	}
+}

@@ -113,3 +113,27 @@ func TestNovelForecastBehavior(t *testing.T) {
 		t.Errorf("pipeline 999 groups = %d, want 0", len(none))
 	}
 }
+
+// TestNovelForecastCloseMonthBuckets verifies close_date in MM/DD/YYYY form is
+// bucketed into a correct YYYY-MM group (regression for substr(1,7) mis-bucketing).
+func TestNovelForecastCloseMonthBuckets(t *testing.T) {
+	s := newTestStore(t)
+	seedOpp(t, s, "1", map[string]any{"status": "Open", "monetary_value": 100, "win_probability": 50, "close_date": "12/20/2025"})
+	seedOpp(t, s, "2", map[string]any{"status": "Open", "monetary_value": 200, "win_probability": 50, "close_date": "12/26/2025"})
+	seedOpp(t, s, "3", map[string]any{"status": "Open", "monetary_value": 50, "win_probability": 50, "close_date": "01/05/2026"})
+
+	rows, err := runForecast(context.Background(), s.DB(), forecastOpts{By: "close-month", Status: "Open"})
+	if err != nil {
+		t.Fatalf("runForecast close-month: %v", err)
+	}
+	got := map[string]int{}
+	for _, r := range rows {
+		got[r.Group] = r.Count
+	}
+	if got["2025-12"] != 2 {
+		t.Errorf("2025-12 count = %d, want 2 (rows: %+v)", got["2025-12"], rows)
+	}
+	if got["2026-01"] != 1 {
+		t.Errorf("2026-01 count = %d, want 1 (rows: %+v)", got["2026-01"], rows)
+	}
+}

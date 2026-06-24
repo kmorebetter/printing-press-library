@@ -68,6 +68,14 @@ func newNovelUpsertCmd(flags *rootFlags) *cobra.Command {
 			if match == "" {
 				match = "email"
 			}
+			// Copper's only person lookup is /people/fetch_by_email, so person
+			// upsert can only de-dupe on email. Any other match key has no
+			// probe endpoint and would silently POST every record as a new
+			// create (duplicates). Reject it instead of pretending to upsert.
+			if entity == "person" && match != "email" {
+				_ = cmd.Usage()
+				return usageErr(fmt.Errorf("upsert person only supports --match email (Copper's only person lookup is fetch_by_email); got %q", match))
+			}
 
 			if dryRunOK(flags) {
 				fmt.Fprintf(cmd.OutOrStdout(), "would upsert %s records matched on %s\n", entity, match)
