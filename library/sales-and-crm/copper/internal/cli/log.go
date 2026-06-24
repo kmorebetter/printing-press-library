@@ -224,16 +224,19 @@ func renderLog(w io.Writer, res logResult, flags *rootFlags) error {
 	}
 	if res.DryRun {
 		fmt.Fprintf(w, "PREVIEW: would %s %s on %s:%d\n", res.Action, res.Type, res.Parent.Type, res.Parent.ID)
-		if res.DeletedID != "" {
-			fmt.Fprintf(w, "  would delete activity %s first\n", res.DeletedID)
-		}
+		// Mirror the real execution order: create the replacement first, then
+		// delete the original only after the create succeeds (so a failed POST
+		// can never lose the original activity).
 		fmt.Fprintf(w, "  POST /activities %v\n", res.Body)
+		if res.DeletedID != "" {
+			fmt.Fprintf(w, "  then delete activity %s (only after the replacement is created)\n", res.DeletedID)
+		}
 		fmt.Fprintln(w, "(re-run with --apply to execute)")
 		return nil
 	}
-	if res.DeletedID != "" {
-		fmt.Fprintf(w, "deleted activity %s\n", res.DeletedID)
-	}
 	fmt.Fprintf(w, "logged %s on %s:%d\n", res.Type, res.Parent.Type, res.Parent.ID)
+	if res.DeletedID != "" {
+		fmt.Fprintf(w, "deleted original activity %s\n", res.DeletedID)
+	}
 	return nil
 }
