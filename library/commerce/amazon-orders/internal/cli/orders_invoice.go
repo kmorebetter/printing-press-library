@@ -40,6 +40,9 @@ func newOrdersInvoiceCmd(flags *rootFlags) *cobra.Command {
 				return classifyAPIError(err, flags)
 			}
 			if !flags.dryRun {
+				if err := validatePageContainsRequestedOrderID(args[0], data); err != nil {
+					return err
+				}
 				data, err = extractHTMLResponse(data, htmlExtractionOptions{
 					Mode:           "page",
 					BaseURL:        htmlExtractionRequestURL(c.BaseURL, path, htmlRequestParams),

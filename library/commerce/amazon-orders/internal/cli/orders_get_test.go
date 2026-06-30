@@ -14,6 +14,16 @@ func TestValidateOrderDetailMatchesRequestedID(t *testing.T) {
 	}
 }
 
+func TestValidatePageContainsRequestedOrderID(t *testing.T) {
+	const orderID = "702-5010515-8774615"
+	if err := validatePageContainsRequestedOrderID(orderID, []byte(`<html>Order # 702-5010515-8774615</html>`)); err != nil {
+		t.Fatalf("validatePageContainsRequestedOrderID() unexpected error: %v", err)
+	}
+	if err := validatePageContainsRequestedOrderID(orderID, []byte(`<html>Order # 111-1111111-1111111</html>`)); err == nil {
+		t.Fatal("validatePageContainsRequestedOrderID() = nil, want mismatch error")
+	}
+}
+
 func TestValidateOrderDetailRejectsMismatchedID(t *testing.T) {
 	err := validateOrderDetailMatchesRequestedID("702-5010515-8774615", &parser.OrderDetail{OrderID: "144-5062705-8396341"})
 	if err == nil {

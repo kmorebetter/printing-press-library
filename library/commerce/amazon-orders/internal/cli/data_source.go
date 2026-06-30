@@ -175,17 +175,15 @@ func authenticatedGet(c *client.Client, path string, params map[string]string) (
 }
 
 func authenticatedGetWithHeaders(c *client.Client, path string, params map[string]string, headers map[string]string) (json.RawMessage, error) {
-	restoreNoCache := c.NoCache
-	c.NoCache = true
-	defer func() { c.NoCache = restoreNoCache }()
-	return c.GetWithHeaders(path, params, headers)
+	noCacheClient := *c
+	noCacheClient.NoCache = true
+	return noCacheClient.GetWithHeaders(path, params, headers)
 }
 
 func authenticatedPaginatedGet(c *client.Client, path string, params map[string]string, headers map[string]string, fetchAll bool, cursorParam, nextCursorPath, hasMoreField string) (json.RawMessage, error) {
-	restoreNoCache := c.NoCache
-	c.NoCache = true
-	defer func() { c.NoCache = restoreNoCache }()
-	return paginatedGet(c, path, params, headers, fetchAll, cursorParam, nextCursorPath, hasMoreField)
+	noCacheClient := *c
+	noCacheClient.NoCache = true
+	return paginatedGet(&noCacheClient, path, params, headers, fetchAll, cursorParam, nextCursorPath, hasMoreField)
 }
 
 // writeThroughCache upserts live API results into the local SQLite store so

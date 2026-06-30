@@ -105,3 +105,10 @@ func validateOrderDetailMatchesRequestedID(requested string, detail *parser.Orde
 	}
 	return nil
 }
+
+func validatePageContainsRequestedOrderID(requested string, data []byte) error {
+	if !strings.Contains(string(data), requested) {
+		return fmt.Errorf("Amazon page did not include requested order %s", requested)
+	}
+	return nil
+}

@@ -541,7 +541,7 @@ FROM resources_fts f
 JOIN resources r ON r.id = f.id
 WHERE resources_fts MATCH ?
 ORDER BY rank
-LIMIT 200`, `"sign in" OR signin OR signinsubmit OR ap_password OR iniciar OR sesion OR sesión OR "robot check" OR captcha OR captchacharacters OR validatecaptcha OR cvf OR widget OR claim OR password OR authentication`)
+LIMIT 200`, `"sign in" OR signin OR signinsubmit OR ap_password OR ap_signin OR "ap signin" OR iniciar OR sesion OR sesión OR "robot check" OR captcha OR captchacharacters OR validatecaptcha OR cvf OR "ax claim"`)
 	if err != nil {
 		return nil, err
 	}
