@@ -143,11 +143,11 @@ This CLI uses Chrome-compatible HTTP transport for browser-facing endpoints. It 
 
 **companies** — Search Trustpilot for companies by name and resolve to their canonical domain
 
-- `trustpilot-pp-cli companies <search_build_id>` — Search for companies matching a name; returns identifyingName domains usable with reviews fetch
+- `trustpilot-pp-cli companies <search_build_id>` — Search for companies matching a name; returns identifyingName domains usable with reviews-fetch
 
 **reviews** — Fetch Trustpilot reviews for a company
 
-- `trustpilot-pp-cli reviews <review_build_id> <domain>` — Fetch a page of reviews for a company by domain (use 'reviews fetch <domain>' from the CLI). Authenticated via...
+- `trustpilot-pp-cli reviews <review_build_id> <domain>` — Fetch a page of reviews for a company by domain (use 'reviews-fetch <domain>' from the CLI). Authenticated via...
 
 
 ### Finding the right command
