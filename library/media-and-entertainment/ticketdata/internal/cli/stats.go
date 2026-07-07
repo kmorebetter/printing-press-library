@@ -60,9 +60,6 @@ func newNovelStatsCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer db.Close()
-			if err := db.EnsureTicketdataTables(cmd.Context()); err != nil {
-				return err
-			}
 			points, err := db.PricePoints(cmd.Context(), args[0])
 			if err != nil {
 				return err

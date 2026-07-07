@@ -56,9 +56,6 @@ func newNovelSearchCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer db.Close()
-			if err := db.EnsureTicketdataTables(cmd.Context()); err != nil {
-				return err
-			}
 			query := strings.TrimSpace(strings.Join(args, " "))
 			results, err := runOfflineSearch(db, query, limit, types)
 			if err != nil {

@@ -68,9 +68,6 @@ func newNovelDriftCmd(flags *rootFlags) *cobra.Command {
 				return err
 			}
 			defer db.Close()
-			if err := db.EnsureTicketdataTables(cmd.Context()); err != nil {
-				return err
-			}
 
 			watches, err := db.ListWatch(cmd.Context())
 			if err != nil {
