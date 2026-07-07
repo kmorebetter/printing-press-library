@@ -171,25 +171,25 @@ janeapp-pp-cli next-opening --clinic embophysio --treatment 1 --staff 1
 
 Stitches 7-day windows until it finds the first available opening.
 
-### Watch for an earlier slot
+### Export appointments to a calendar file
 
 ```bash
-janeapp-pp-cli watch --clinic embophysio --treatment 1 --staff 1 --before 2026-08-01
+janeapp-pp-cli calendar --all-clinics --out ~/jane.ics
 ```
 
-Polls availability and reports when something opens up before your target date.
+Generates an ICS from your appointments across every clinic; import into Apple/Google Calendar or subscribe live with 'calendar --url'.
 
-### Dry-run a booking
+### Book a slot (dry-run first)
 
 ```bash
 janeapp-pp-cli book --clinic embophysio --treatment 1 --staff 1 --location 1 --at 2026-07-15T09:00:00
 ```
 
-Shows exactly what would be booked without writing anything to Jane (dry-run by default; add --confirm to submit).
+Shows the reserve/confirm request without writing; add --confirm to actually book.
 
 ## Auth Setup
 
-Each Jane clinic is its own subdomain with a separate patient account. Register a clinic (`clinic add <name> --url=https://<clinic>.janeapp.com`), log in to it once in your browser, then import the session with `auth login --clinic <name> --chrome` (or `--cookies-file <file>`). Jane gates username/password login behind reCAPTCHA, so the CLI reads your existing browser session cookie instead. Repeat per clinic; read commands accept --all-clinics.
+Each Jane clinic is its own subdomain with a separate patient account, and Jane gates username/password login behind reCAPTCHA. So the CLI imports the _front_desk_session cookie from a browser where you're already logged in: register a clinic (`clinic add <name> --url=https://<clinic>.janeapp.com`), log in to it once in your browser, then run `auth login --clinic <name> --chrome` (or `--cookies-file <file>`). Repeat per clinic; read commands accept --all-clinics.
 
 Run `janeapp-pp-cli doctor` to verify setup.
 

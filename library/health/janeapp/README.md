@@ -126,23 +126,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
 
 ## Authentication
 
-Each Jane clinic is its own subdomain with a separate patient account. **Jane gates
-username/password login behind reCAPTCHA**, which a CLI can't solve, so this tool
-authenticates by importing the session from a browser where you're already logged in.
-
-Register a clinic, log in to it once in your browser, then import the session:
-
-```bash
-clinic add <name> --url=https://<clinic>.janeapp.com
-auth login --clinic <name> --chrome            # read the session cookie from Chrome
-# or, if you don't want a cookie tool touching the keychain:
-auth login --clinic <name> --cookies-file <file>   # import an exported cookie
-```
-
-`--chrome` needs a cookie reader (`pycookiecheat`, `cookies`, or `cookie-scoop-cli`).
-For `--cookies-file`, copy the `_front_desk_session` cookie for the clinic from Chrome
-DevTools (Application → Cookies) into a file as `_front_desk_session=<value>`. Repeat
-per clinic; read commands accept `--all-clinics`. When a session expires, re-import it.
+Each Jane clinic is its own subdomain with a separate patient account, and Jane gates username/password login behind reCAPTCHA. So the CLI imports the _front_desk_session cookie from a browser where you're already logged in: register a clinic (`clinic add <name> --url=https://<clinic>.janeapp.com`), log in to it once in your browser, then run `auth login --clinic <name> --chrome` (or `--cookies-file <file>`). Repeat per clinic; read commands accept --all-clinics.
 
 ## Quick Start
 
@@ -150,7 +134,7 @@ per clinic; read commands accept `--all-clinics`. When a session expires, re-imp
 # Register a clinic; each keeps its own subdomain and session.
 janeapp-pp-cli clinic add embophysio --url=https://embophysio.janeapp.com
 
-# Log in to embophysio in Chrome, then import that session (reCAPTCHA already solved).
+# Log in to the clinic in Chrome first, then import that session (Jane blocks CLI password login via reCAPTCHA).
 janeapp-pp-cli auth login --clinic embophysio --chrome
 
 # View your upcoming appointments at that clinic.
@@ -221,21 +205,21 @@ janeapp-pp-cli next-opening --clinic embophysio --treatment 1 --staff 1
 
 Stitches 7-day windows until it finds the first available opening.
 
-### Watch for an earlier slot
+### Export appointments to a calendar file
 
 ```bash
-janeapp-pp-cli watch --clinic embophysio --treatment 1 --staff 1 --before 2026-08-01
+janeapp-pp-cli calendar --all-clinics --out ~/jane.ics
 ```
 
-Polls availability and reports when something opens up before your target date.
+Generates an ICS from your appointments across every clinic; import into Apple/Google Calendar or subscribe live with 'calendar --url'.
 
-### Dry-run a booking
+### Book a slot (dry-run first)
 
 ```bash
 janeapp-pp-cli book --clinic embophysio --treatment 1 --staff 1 --location 1 --at 2026-07-15T09:00:00
 ```
 
-Shows exactly what would be booked without writing anything to Jane (dry-run by default; add --confirm to submit).
+Shows the reserve/confirm request without writing; add --confirm to actually book.
 
 ## Usage
 
@@ -418,10 +402,9 @@ Static request headers can be configured under `headers`; per-command header ove
 - Run the `list` command to see available items
 
 ### API-specific
-- **auth login says "reCAPTCHA required" / lands on /auth/failure** — Jane blocks command-line password login. Log in to the clinic in your browser, then import the session with `auth login --clinic <name> --chrome` (or `--cookies-file`).
-- **appointments return 401** — Your imported session expired — log in again in the browser and re-run `auth login --clinic <name> --chrome`.
+- **auth login says reCAPTCHA required / lands on /auth/failure** — Jane blocks CLI password login. Log in to the clinic in your browser, then import with 'auth login --clinic <name> --chrome'.
+- **appointments return 401** — Your imported session expired — log in again in the browser and re-run 'auth login --clinic <name> --chrome'.
 - **openings returns 'Number of days must be an integer between 1 and 7'** — Use num-days 1..7; for longer horizons use next-opening/watch which page automatically.
-- **book says a treatment can't be booked online** — Check 'treatments' — only entries with book_online=true are online-bookable; others are call-to-book.
 
 ## Known Gaps
 

@@ -54,8 +54,8 @@
   },
   "wiring_check": {
     "command_tree": {
-      "defined": 42,
-      "registered": 42
+      "defined": 43,
+      "registered": 43
     },
     "config_consistency": {
       "write_fields": [
@@ -125,13 +125,13 @@
     "skipped": true
   },
   "print_json_filtered_check": {
-    "checked": 32
+    "checked": 34
   },
   "test_presence": {
     "checked": 0
   },
   "naming_check": {
-    "checked": 32
+    "checked": 34
   },
   "sync_param_drop_check": {
     "checked": 0,

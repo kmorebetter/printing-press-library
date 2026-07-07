@@ -13,71 +13,7 @@ import (
 	"io"
 
 	"github.com/spf13/cobra"
-	"janeapp-pp-cli/internal/client"
 )
-
-// buildAppointmentBody constructs the create-appointment request body. Jane's
-// patient booking creates an appointment from a chosen opening; the body mirrors
-// the opening fields plus the resolved timing.
-func buildAppointmentBody(treatment, staff, location int, startAt string, duration int) map[string]any {
-	appt := map[string]any{
-		"treatment_id":    treatment,
-		"staff_member_id": staff,
-		"location_id":     location,
-		"start_at":        startAt,
-	}
-	if duration > 0 {
-		appt["duration"] = duration
-	}
-	return map[string]any{"appointment": appt}
-}
-
-// clientForWrite builds a client for the active clinic, forcing dry-run unless
-// the user passed --confirm. Returns the clinic so callers can message clearly.
-func clientForWrite(flags *rootFlags, confirm bool) (*client.Client, *Clinic, error) {
-	clinic, err := requireActiveClinic(flags)
-	if err != nil {
-		return nil, nil, err
-	}
-	if clinic.Session == "" {
-		return nil, nil, usageErr(fmt.Errorf("not logged in to clinic %q; run 'janeapp-pp-cli auth login --clinic %s'", clinic.Name, clinic.Name))
-	}
-	c, err := flags.newClient()
-	if err != nil {
-		return nil, nil, err
-	}
-	// Without --confirm, never send a real mutation: reuse the client's dry-run
-	// path so the user sees exactly what would be submitted.
-	if !confirm {
-		c.DryRun = true
-	}
-	return c, clinic, nil
-}
-
-func writeResult(cmd *cobra.Command, flags *rootFlags, confirm bool, action string, data json.RawMessage, status int) error {
-	if !confirm {
-		fmt.Fprintf(cmd.ErrOrStderr(), "(dry run — no changes made. Re-run with --confirm to %s.)\n", action)
-		if flags.asJSON {
-			return printJSONFiltered(cmd.OutOrStdout(), map[string]any{"dry_run": true, "action": action}, flags)
-		}
-		return nil
-	}
-	if flags.asJSON {
-		out := map[string]any{"action": action, "status": status}
-		if len(data) > 0 {
-			var parsed any
-			if json.Unmarshal(data, &parsed) == nil {
-				out["result"] = parsed
-			}
-		}
-		return printJSONFiltered(cmd.OutOrStdout(), out, flags)
-	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s (status %d).\n", action, status)
-	if len(data) > 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), string(data))
-	}
-	return nil
-}
 
 func newBookCmd(flags *rootFlags) *cobra.Command {
 	var treatment, staff, location int
