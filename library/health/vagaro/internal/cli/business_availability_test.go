@@ -120,8 +120,26 @@ func TestFilterAvailabilityGroupsHonorsDateWindow(t *testing.T) {
 	from := time.Date(2026, 7, 21, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 7, 31, 0, 0, 0, 0, time.UTC)
 
-	got := filterAvailabilityGroups(groups, from, to)
+	got := filterAvailabilityGroups(groups, "", from, to)
 	require.Len(t, got, 1)
 	assert.Equal(t, "Mon Jul-27-2026", got[0].Date)
 	assert.Equal(t, []string{"10:00 AM"}, got[0].Times)
+}
+
+func TestFilterAvailabilityGroupsHonorsProvider(t *testing.T) {
+	groups := []vagaro.SlotGroup{
+		{Date: "Mon Jul-20-2026", ProviderID: "301", Times: []string{"9:00 AM"}},
+		{Date: "Mon Jul-20-2026", ProviderID: "302", Times: []string{"10:00 AM"}},
+		{Date: "Mon Jul-20-2026", Times: []string{"11:00 AM"}},
+	}
+	from := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
+
+	got := filterAvailabilityGroups(groups, "301", from, to)
+	require.Len(t, got, 1)
+	assert.Equal(t, "301", got[0].ProviderID)
+	assert.Equal(t, []string{"9:00 AM"}, got[0].Times)
+
+	got = filterAvailabilityGroups(groups, "", from, to)
+	require.Len(t, got, 3)
 }

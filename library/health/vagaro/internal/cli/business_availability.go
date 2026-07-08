@@ -126,7 +126,7 @@ func newBusinessAvailabilityCmd(flags *rootFlags) *cobra.Command {
 				if err != nil {
 					return classifyVagaroError(err, flags)
 				}
-				for _, g := range filterAvailabilityGroups(groups, plan.From, plan.To) {
+				for _, g := range filterAvailabilityGroups(groups, plan.ProviderID, plan.From, plan.To) {
 					summary.TotalSlots += len(g.Times)
 					summary.Groups = append(summary.Groups, g)
 				}
@@ -274,9 +274,12 @@ func availabilityWeekDates(from, to time.Time) []time.Time {
 	return weeks
 }
 
-func filterAvailabilityGroups(groups []vagaro.SlotGroup, from, to time.Time) []vagaro.SlotGroup {
+func filterAvailabilityGroups(groups []vagaro.SlotGroup, providerID string, from, to time.Time) []vagaro.SlotGroup {
 	out := make([]vagaro.SlotGroup, 0, len(groups))
 	for _, g := range groups {
+		if providerID != "" && strings.TrimSpace(g.ProviderID) != providerID {
+			continue
+		}
 		kept := g
 		kept.Times = nil
 		for _, slot := range g.Times {
