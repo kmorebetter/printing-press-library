@@ -306,6 +306,49 @@ func (s *Store) AllLatestSnapshots(ctx context.Context) (map[string]TDSnapshot, 
 	return latest, nil
 }
 
+// LatestSnapshotsForEvents returns up to n most-recent snapshots per event for
+// the given event IDs in a single query, mirroring PricePointsForEvents. Each
+// map value is ordered most-recent first, matching single-event LatestSnapshots.
+func (s *Store) LatestSnapshotsForEvents(ctx context.Context, eventIDs []string, n int) (map[string][]TDSnapshot, error) {
+	out := make(map[string][]TDSnapshot, len(eventIDs))
+	if len(eventIDs) == 0 || n <= 0 {
+		return out, nil
+	}
+	if err := s.EnsureTicketdataTables(ctx); err != nil {
+		return nil, fmt.Errorf("ticketdata store latest snapshots batch: %w", err)
+	}
+	placeholders := make([]string, len(eventIDs))
+	args := make([]any, 0, len(eventIDs)+1)
+	for i, id := range eventIDs {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, n)
+	query := `SELECT event_id, get_in_price, max_price, number_of_listings, forecast_value, forecast_available, three_day_change_pct, price_trend_direction, captured_at
+		 FROM (
+			SELECT event_id, get_in_price, max_price, number_of_listings, forecast_value, forecast_available, three_day_change_pct, price_trend_direction, captured_at,
+				ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY captured_at DESC, id DESC) AS rn
+			FROM td_snapshots
+			WHERE event_id IN (` + strings.Join(placeholders, ",") + `)
+		 ) ranked
+		 WHERE rn <= ?
+		 ORDER BY event_id, rn`
+	rows, err := s.DB().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("ticketdata store latest snapshots batch: %w", err)
+	}
+	defer rows.Close()
+
+	snaps, err := scanTDSnapshots(rows)
+	if err != nil {
+		return nil, fmt.Errorf("ticketdata store latest snapshots batch: %w", err)
+	}
+	for _, snap := range snaps {
+		out[snap.EventID] = append(out[snap.EventID], snap)
+	}
+	return out, nil
+}
+
 func (s *Store) UpsertPricePoints(ctx context.Context, eventID string, pts []TDPricePoint) error {
 	if err := s.EnsureTicketdataTables(ctx); err != nil {
 		return fmt.Errorf("ticketdata store upsert price points: %w", err)

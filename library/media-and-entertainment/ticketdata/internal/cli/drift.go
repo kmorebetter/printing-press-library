@@ -73,14 +73,33 @@ func newNovelDriftCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// Batch every snapshot read (moves need 2 latest per watched event,
+			// targets need 1 latest) into a single query over the union of IDs.
+			idSet := make(map[string]struct{}, len(watches)+len(targetMap))
+			eventIDs := make([]string, 0, len(watches)+len(targetMap))
+			addID := func(id string) {
+				if _, ok := idSet[id]; !ok {
+					idSet[id] = struct{}{}
+					eventIDs = append(eventIDs, id)
+				}
+			}
+			for _, watch := range watches {
+				addID(watch.EventID)
+			}
+			for id := range targetMap {
+				addID(id)
+			}
+			snapsByEvent, err := db.LatestSnapshotsForEvents(cmd.Context(), eventIDs, 2)
+			if err != nil {
+				return err
+			}
+
 			titles := make(map[string]string, len(watches))
 			moved := make([]driftMove, 0)
 			for _, watch := range watches {
 				titles[watch.EventID] = watch.Title
-				snaps, err := db.LatestSnapshots(cmd.Context(), watch.EventID, 2)
-				if err != nil {
-					return err
-				}
+				snaps := snapsByEvent[watch.EventID]
 				if len(snaps) < 2 {
 					continue
 				}
@@ -102,10 +121,7 @@ func newNovelDriftCmd(flags *rootFlags) *cobra.Command {
 			}
 			hits := make([]driftTargetHit, 0)
 			for id, target := range targetMap {
-				snaps, err := db.LatestSnapshots(cmd.Context(), id, 1)
-				if err != nil {
-					return err
-				}
+				snaps := snapsByEvent[id]
 				if len(snaps) == 0 || snaps[0].GetInPrice <= 0 || snaps[0].GetInPrice > target {
 					continue
 				}
