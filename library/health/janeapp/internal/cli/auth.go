@@ -1100,13 +1100,27 @@ func parseCookieHeaderCookies(header string) []*http.Cookie {
 	return cookies
 }
 
+// cookieDomainMatches reports whether a cookie with domain cookieDomain is
+// valid for the target host. Standard cookie scoping: a cookie is sent to a
+// host only when the host equals the cookie's domain or is a subdomain of it —
+// never the reverse. The cookie domain must be a registrable name (contain a
+// dot) so a bare TLD can't attach to unrelated hosts. This also rejects a
+// session cookie scoped to a *different* Jane clinic subdomain (e.g.
+// leahkangas.janeapp.com) from being imported for another clinic
+// (embophysio.janeapp.com), keeping per-clinic sessions from crossing.
 func cookieDomainMatches(cookieDomain string, targetDomain string) bool {
 	target := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(targetDomain)), ".")
 	if target == "" {
 		return true
 	}
 	candidate := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(cookieDomain)), ".")
-	return candidate == target || strings.HasSuffix(candidate, "."+target) || (strings.Contains(candidate, ".") && strings.HasSuffix(target, "."+candidate))
+	if candidate == "" {
+		return true // host-only cookie (no Domain attribute): belongs to the target host
+	}
+	if !strings.Contains(candidate, ".") {
+		return false // bare TLD or single label — too broad to trust
+	}
+	return target == candidate || strings.HasSuffix(target, "."+candidate)
 }
 
 // parseCookieString splits a "name1=value1; name2=value2" string into a map.

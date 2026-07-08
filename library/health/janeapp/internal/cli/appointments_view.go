@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"time"
 
@@ -49,7 +50,7 @@ type apptRecord struct {
 }
 
 var apptStartKeys = []string{"start_at", "starts_at", "start", "start_time", "appointment_start", "scheduled_at", "begins_at"}
-var apptEndKeys = []string{"end_at", "ends_at", "end", "end_time"}
+var apptEndKeys = []string{"end_at", "ends_at", "end", "end_time", "finish_at", "end_datetime"}
 
 func extractTimeFromKeys(m map[string]any, keys []string) (time.Time, string) {
 	for _, k := range keys {
@@ -163,12 +164,25 @@ func fetchClinicAppointments(ctx context.Context, flags *rootFlags, clinic *Clin
 	var items []map[string]any
 	if err := json.Unmarshal(data, &items); err != nil {
 		var wrapper map[string]json.RawMessage
+		matched := false
 		if err2 := json.Unmarshal(data, &wrapper); err2 == nil {
 			for _, key := range []string{"appointments", "data", "results"} {
 				if raw, ok := wrapper[key]; ok {
 					_ = json.Unmarshal(raw, &items)
+					matched = true
 					break
 				}
+			}
+			// A non-empty object whose shape we don't recognize would otherwise
+			// be reported as "no appointments", silently hiding real bookings
+			// (and any conflicts that depend on them). Surface it instead.
+			if !matched && len(wrapper) > 0 {
+				keys := make([]string, 0, len(wrapper))
+				for k := range wrapper {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				fmt.Fprintf(os.Stderr, "warning: unrecognized appointments response shape for clinic %q (top-level keys: %v); treating as empty — bookings may be hidden\n", clinic.Name, keys)
 			}
 		}
 	}

@@ -113,8 +113,16 @@ interval (bounded by --max-checks) until an earlier slot appears.`,
 
 // parseFlexibleDate accepts YYYY-MM-DD or RFC3339.
 func parseFlexibleDate(s string) (time.Time, error) {
-	for _, layout := range []string{"2006-01-02", time.RFC3339, "2006-01-02T15:04:05"} {
-		if t, err := time.Parse(layout, s); err == nil {
+	// RFC3339 carries its own offset, so parse it as-is. Layouts without a zone
+	// are user-entered wall-clock times; anchor them to the machine's local
+	// zone (not UTC) so a candidate like "2026-07-15T09:00:00" compares
+	// correctly against Jane's absolute appointment times — otherwise
+	// conflict-check would shift by the local offset and miss a real overlap.
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02"} {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
 			return t, nil
 		}
 	}
