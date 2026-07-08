@@ -82,11 +82,18 @@ npx -y @mvanhorn/printing-press-library install espn
 npx -y @mvanhorn/printing-press-library install airbnb-pp-cli
 ```
 
-Several at once (bundles and CLI names mix freely):
+Several at once (bundles and CLI names mix freely; multi-name installs run up to 6 in parallel, with `[k/N]` progress on stderr):
 
 ```bash
 npx -y @mvanhorn/printing-press-library install espn sentry dub
 npx -y @mvanhorn/printing-press-library install starter-pack cal-com
+```
+
+A whole category, or the entire catalog:
+
+```bash
+npx -y @mvanhorn/printing-press-library install --category travel
+npx -y @mvanhorn/printing-press-library install --all
 ```
 
 Under the hood: the installer reads the live catalog at [`registry.json`](https://github.com/mvanhorn/printing-press-library/blob/main/registry.json), resolves the CLI's Go module path, runs `go install`, and installs the matching focused skill from `cli-skills/pp-<name>` via `npx skills@latest`.
@@ -127,6 +134,10 @@ npx -y @mvanhorn/printing-press-library install espn --bin-dir /path/to/bin
 
 # OpenClaw: target OpenClaw skills; the installer defaults to a per-user binary directory
 npx -y @mvanhorn/printing-press-library install espn --agent openclaw
+
+# Install every CLI in a catalog category (repeatable), or the whole catalog
+npx -y @mvanhorn/printing-press-library install --category travel --category payments
+npx -y @mvanhorn/printing-press-library install --all
 
 # Machine-readable output
 npx -y @mvanhorn/printing-press-library install espn --json
