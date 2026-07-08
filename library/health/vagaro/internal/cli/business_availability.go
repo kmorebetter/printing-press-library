@@ -85,7 +85,7 @@ func newBusinessAvailabilityCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return classifyVagaroError(err, flags)
 			}
-			if len(services) == 0 && strings.TrimSpace(opts.Service) == "" && strings.TrimSpace(opts.Provider) == "" {
+			if len(services) == 0 {
 				summary := availabilitySummary{Slug: slug, BusinessID: businessID, Groups: []vagaro.SlotGroup{}, Note: "business has no bookable services"}
 				return emitVagaro(cmd, flags, summary)
 			}
