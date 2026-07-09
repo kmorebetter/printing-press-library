@@ -13,15 +13,15 @@ metadata:
     install:
       - kind: go
         bins: [juneoven-pp-cli]
-        module: github.com/mvanhorn/printing-press-library/library/food-and-dining/juneoven/cmd/juneoven-pp-cli
+        module: github.com/mvanhorn/printing-press-library/library/devices/juneoven/cmd/juneoven-pp-cli
 ---
 <!-- GENERATED FILE — DO NOT EDIT.
-     This file is a verbatim mirror of library/food-and-dining/juneoven/SKILL.md,
+     This file is a verbatim mirror of library/devices/juneoven/SKILL.md,
      regenerated post-merge by tools/generate-skills/. Hand-edits here are
      silently overwritten on the next regen. Edit the library/ source instead.
      See the repository agent guide, section "Generated artifacts: registry.json, cli-skills/". -->
 
-# Juneoven — Printing Press CLI
+# June Oven — Printing Press CLI
 
 ## Prerequisites: Install the CLI
 
@@ -37,7 +37,7 @@ This skill drives the `juneoven-pp-cli` binary. **You must verify the CLI is ins
 If the `npx` install fails (no Node, offline, etc.), fall back to a direct Go install (requires Go 1.26.4 or newer). This installs into `$GOPATH/bin` (default `$HOME/go/bin`), so add that directory to `$PATH` instead:
 
 ```bash
-go install github.com/mvanhorn/printing-press-library/library/food-and-dining/juneoven/cmd/juneoven-pp-cli@latest
+go install github.com/mvanhorn/printing-press-library/library/devices/juneoven/cmd/juneoven-pp-cli@latest
 ```
 
 If `--version` reports "command not found" after install, the runtime cannot see the binary directory on `$PATH`. Do not proceed with skill commands until verification succeeds.
@@ -483,7 +483,7 @@ Parse `$ARGUMENTS`:
 
 1. Install the MCP server:
    ```bash
-   go install github.com/mvanhorn/printing-press-library/library/food-and-dining/juneoven/cmd/juneoven-pp-mcp@latest
+   go install github.com/mvanhorn/printing-press-library/library/devices/juneoven/cmd/juneoven-pp-mcp@latest
    ```
 2. Register with Claude Code:
    ```bash
