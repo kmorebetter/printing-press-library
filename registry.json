@@ -10042,6 +10042,61 @@
       }
     },
     {
+      "name": "mobbin",
+      "category": "productivity",
+      "api": "Mobbin",
+      "description": "Every Mobbin screen, flow, and pattern — searchable offline, deckable in one command, with longitudinal drift no Mobbin tool ships.",
+      "search_terms": [
+        "mobbin",
+        "mobbin-pp-cli",
+        "Every Mobbin screen, flow, and pattern — searchable offline, deckable in one command, with longitudinal drift no Mobbin tool ships.",
+        "Pattern Deck Export",
+        "deck",
+        "Build a design-crit deck for a pattern across an industry: searches matching screens, downloads full-res images from the Bytescale CDN, packages a zip with a manifest CSV.",
+        "Offline Pattern Bench",
+        "bench",
+        "Cross-app leaderboard for any pattern from the local store: count, last seen, top apps that ship it.",
+        "Flow Audit with Delta",
+        "audit",
+        "Time-windowed flow audit across an industry: app, flow name, step count, captured_at — with --since support for delta-since-last-quarter reports.",
+        "Version Drift Watch",
+        "drift",
+        "Diff an app's flows + screens between local snapshots; surface what changed (added/removed/screen count).",
+        "Batch Full-Res Grab",
+        "grab",
+        "Batch-download matching screens at 1920px from Bytescale with deterministic filenames and a manifest.json side-car for downstream tooling.",
+        "Cross-Platform Parity",
+        "cross",
+        "Fan out a pattern query across web AND iOS for one app set; join results on app slug; output a side-by-side parity manifest."
+      ],
+      "path": "library/productivity/mobbin",
+      "printer": "darinkishore",
+      "printer_name": "Darin Kishore",
+      "creator": {
+        "handle": "darinkishore",
+        "name": "Darin Kishore"
+      },
+      "contributors": [
+        {
+          "handle": "tmchow",
+          "name": "Trevin Chow"
+        }
+      ],
+      "mcp": {
+        "binary": "mobbin-pp-mcp",
+        "transports": [
+          "stdio",
+          "http"
+        ],
+        "tool_count": 22,
+        "public_tool_count": 9,
+        "auth_type": "cookie",
+        "env_vars": [],
+        "mcp_ready": "partial",
+        "spec_format": "internal"
+      }
+    },
+    {
       "name": "monarch-money",
       "category": "payments",
       "api": "Monarch Money",
