@@ -7010,6 +7010,55 @@
       ]
     },
     {
+      "name": "google-business-profile",
+      "category": "marketing",
+      "api": "Google Business Profile",
+      "description": "Combined CLI for multiple API services",
+      "search_terms": [
+        "google-business-profile",
+        "Google Business Profile",
+        "google-business-profile-pp-cli",
+        "Combined CLI for multiple API services",
+        "Google OAuth2 access token for the Google Business Profile APIs. Prefer `google-business-profile-pp-cli login`; use the env var only when you already have a short-lived access token.",
+        "Offline account-and-location archive",
+        "workflow archive",
+        "Build a local SQLite archive of Google Business Profile resources so agents can inspect accounts and locations without re-hitting the API on every question.",
+        "Archive health snapshot",
+        "workflow status",
+        "Show local archive freshness and sync state across resource tables so operators know whether offline answers are still trustworthy.",
+        "Local GBP search fallback",
+        "search",
+        "Search locally synced Business Profile data with FTS5 when a native API search path is absent or live auth is unavailable.",
+        "Archive analytics for rollout audits",
+        "analytics",
+        "Run grouped analytics over synced data to count resources and surface distribution patterns without exporting to spreadsheets first.",
+        "Live change tailing",
+        "tail",
+        "Poll the API and emit NDJSON change events so operators can watch location-related activity in near real time."
+      ],
+      "path": "library/marketing/google-business-profile",
+      "printer": "rajyaligar",
+      "printer_name": "Raj Yaligar",
+      "creator": {
+        "handle": "rajyaligar",
+        "name": "Raj Yaligar"
+      },
+      "mcp": {
+        "binary": "google-business-profile-pp-mcp",
+        "transports": [
+          "stdio"
+        ],
+        "tool_count": 49,
+        "public_tool_count": 0,
+        "auth_type": "bearer_token",
+        "env_vars": [
+          "GOOGLE_BUSINESS_PROFILE_OAUTH2"
+        ],
+        "mcp_ready": "full",
+        "spec_format": "openapi3"
+      }
+    },
+    {
       "name": "google-photos",
       "category": "media-and-entertainment",
       "api": "Google Photos",
@@ -10070,6 +10119,12 @@
         "Fan out a pattern query across web AND iOS for one app set; join results on app slug; output a side-by-side parity manifest."
       ],
       "path": "library/productivity/mobbin",
+      "release": {
+        "cli_name": "mobbin-pp-cli",
+        "version": "2026.7.1",
+        "released_at": "2026-07-09T04:38:55Z",
+        "source_commit": "0f9f93d52a0f913256edf531ea8f9ef75e83b9d9"
+      },
       "printer": "darinkishore",
       "printer_name": "Darin Kishore",
       "creator": {
@@ -17777,9 +17832,9 @@
       "path": "library/health/vagaro",
       "release": {
         "cli_name": "vagaro-pp-cli",
-        "version": "2026.7.2",
-        "released_at": "2026-07-08T20:38:39Z",
-        "source_commit": "ee39e4919399ad78b9f2ecfd76c17a1c8beea15f"
+        "version": "2026.7.4",
+        "released_at": "2026-07-09T06:08:41Z",
+        "source_commit": "6ba5d38b73d86f6ac33a488f7d26757ed838a0bf"
       },
       "printer": "tmchow",
       "printer_name": "Trevin Chow",
