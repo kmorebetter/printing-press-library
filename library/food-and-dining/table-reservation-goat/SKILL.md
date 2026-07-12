@@ -1,7 +1,7 @@
 ---
 name: pp-table-reservation-goat
 description: "Printing Press CLI for Table Reservation Goat. One reservation CLI for OpenTable, Tock, and Resy — search all three networks at once, watch for cancellations"
-author: "Omar Shahine"
+author: "Pejman Pour-Moezzi"
 license: "Apache-2.0"
 argument-hint: "<command> [args] | install cli|mcp"
 allowed-tools: "Read Bash"
