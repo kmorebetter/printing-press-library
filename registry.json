@@ -2378,9 +2378,9 @@
       "path": "library/commerce/blacklane",
       "release": {
         "cli_name": "blacklane-pp-cli",
-        "version": "2026.7.1",
-        "released_at": "2026-07-08T18:21:21Z",
-        "source_commit": "11d7b4ea752c9c8fb8909037133058eb57560cc0"
+        "version": "2026.7.2",
+        "released_at": "2026-07-13T08:36:18Z",
+        "source_commit": "b12dadce4d0b1de33d282585a8d2a2122a594742"
       },
       "printer": "omarshahine",
       "printer_name": "Omar Shahine",
@@ -8637,9 +8637,9 @@
       "path": "library/food-and-dining/jimmy-johns",
       "release": {
         "cli_name": "jimmy-johns-pp-cli",
-        "version": "2026.7.1",
-        "released_at": "2026-07-08T18:21:21Z",
-        "source_commit": "11d7b4ea752c9c8fb8909037133058eb57560cc0"
+        "version": "2026.7.2",
+        "released_at": "2026-07-13T08:35:16Z",
+        "source_commit": "68197713ff7fe67be17d84fc7e9f46a46297681d"
       },
       "printer": "omarshahine",
       "printer_name": "Omar Shahine",
@@ -16192,6 +16192,12 @@
         "handle": "giacaglia",
         "name": "Giuliano Giacaglia"
       },
+      "contributors": [
+        {
+          "handle": "evanedgeworth",
+          "name": "Evan Edgeworth"
+        }
+      ],
       "mcp": {
         "binary": "supabase-pp-mcp",
         "transports": [
