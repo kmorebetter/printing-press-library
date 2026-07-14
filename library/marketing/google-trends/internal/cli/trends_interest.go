@@ -113,7 +113,7 @@ func newTrendsInterestCmd(flags *rootFlags) *cobra.Command {
 			}
 			if db != nil {
 				for _, kw := range keywords {
-					q := gtKeywordQueryRecord{Keyword: kw, Geo: flagGeo, Timeframe: flagTimeframe, LastSyncedAt: syncedAt}
+					q := gtKeywordQueryRecord{Keyword: kw, Geo: flagGeo, Timeframe: flagTimeframe, Category: flagCategory, Property: flagProperty, CompareScope: compareScope, LastSyncedAt: syncedAt}
 					body, _ := json.Marshal(q)
 					id := sha256ID(kw, flagGeo, flagTimeframe, categoryStr, flagProperty, compareScope)
 					if err := db.Upsert("gt_keyword_query", id, body); err != nil {

@@ -54,12 +54,15 @@ type gtRelatedTermRecord struct {
 }
 
 // gtKeywordQueryRecord is the gt_keyword_query resource: one row per tracked
-// (keyword, geo) pair, updated on every `trends interest` call. Read by
-// `trends stale`.
+// (keyword, geo, category, property, compare_scope) pair, updated on every
+// `trends interest` call. Read by `trends stale`.
 type gtKeywordQueryRecord struct {
 	Keyword      string `json:"keyword"`
 	Geo          string `json:"geo"`
 	Timeframe    string `json:"timeframe"`
+	Category     int    `json:"category"`
+	Property     string `json:"property"`
+	CompareScope string `json:"compare_scope"`
 	LastSyncedAt string `json:"last_synced_at"`
 }
 

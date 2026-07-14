@@ -16,6 +16,9 @@ import (
 type staleKeyword struct {
 	Keyword      string `json:"keyword"`
 	Geo          string `json:"geo"`
+	Category     int    `json:"category"`
+	Property     string `json:"property,omitempty"`
+	CompareScope string `json:"compare_scope,omitempty"`
 	LastSyncedAt string `json:"last_synced_at"`
 	Age          string `json:"age"`
 }
@@ -74,6 +77,9 @@ func newNovelTrendsStaleCmd(flags *rootFlags) *cobra.Command {
 				out = append(out, staleKeyword{
 					Keyword:      kq.Keyword,
 					Geo:          kq.Geo,
+					Category:     kq.Category,
+					Property:     kq.Property,
+					CompareScope: kq.CompareScope,
 					LastSyncedAt: kq.LastSyncedAt,
 					Age:          time.Since(lastSynced).Round(time.Second).String(),
 				})
