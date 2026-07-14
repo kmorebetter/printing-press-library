@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,12 +18,18 @@ import (
 
 // collectRelatedTerms fetches a RELATED_QUERIES/RELATED_TOPICS widget's top
 // and rising terms and, if db is non-nil, persists each as a gt_related_term
-// row. facetLabel is "query" or "topic" per the spec's stored field.
-func collectRelatedTerms(ctx context.Context, c *client.Client, db *store.Store, cmd *cobra.Command, keyword string, widget gtrends.Widget, facetLabel, geo, timeframe, syncedAt string) ([]gtRelatedTermRecord, error) {
+// row. facetLabel is "query" or "topic" per the spec's stored field. category
+// is part of the cache identity (not just geo/timeframe): Google's Explore
+// request includes it, and a different category can return different related
+// terms for the same keyword/geo/timeframe -- omitting it from the ID lets a
+// later sync with a different category silently overwrite a differently
+// scoped snapshot under the same row.
+func collectRelatedTerms(ctx context.Context, c *client.Client, db *store.Store, cmd *cobra.Command, keyword string, widget gtrends.Widget, facetLabel, geo, timeframe string, category int, syncedAt string) ([]gtRelatedTermRecord, error) {
 	top, rising, err := gtrends.RelatedSearches(ctx, c, widget)
 	if err != nil {
 		return nil, err
 	}
+	categoryStr := strconv.Itoa(category)
 	out := make([]gtRelatedTermRecord, 0, len(top)+len(rising))
 	add := func(kind string, terms []gtrends.RelatedTerm) {
 		for _, t := range terms {
@@ -33,7 +40,7 @@ func collectRelatedTerms(ctx context.Context, c *client.Client, db *store.Store,
 			out = append(out, rec)
 			if db != nil {
 				body, _ := json.Marshal(rec)
-				id := sha256ID(keyword, rec.Term, kind, facetLabel, geo, timeframe)
+				id := sha256ID(keyword, rec.Term, kind, facetLabel, geo, timeframe, categoryStr)
 				if err := db.Upsert("gt_related_term", id, body); err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to cache related term %q: %v\n", rec.Term, err)
 				}
@@ -101,7 +108,7 @@ func newTrendsRelatedCmd(flags *rootFlags) *cobra.Command {
 			out := make([]gtRelatedTermRecord, 0)
 			if facetFilter == "queries" || facetFilter == "both" {
 				if widget, ok := gtrends.FindWidget(explore.Widgets, "RELATED_QUERIES"); ok {
-					rows, err := collectRelatedTerms(ctx, c, db, cmd, keyword, widget, "query", flagGeo, flagTimeframe, syncedAt)
+					rows, err := collectRelatedTerms(ctx, c, db, cmd, keyword, widget, "query", flagGeo, flagTimeframe, flagCategory, syncedAt)
 					if err != nil {
 						return classifyAPIError(err, flags)
 					}
@@ -110,7 +117,7 @@ func newTrendsRelatedCmd(flags *rootFlags) *cobra.Command {
 			}
 			if facetFilter == "topics" || facetFilter == "both" {
 				if widget, ok := gtrends.FindWidget(explore.Widgets, "RELATED_TOPICS"); ok {
-					rows, err := collectRelatedTerms(ctx, c, db, cmd, keyword, widget, "topic", flagGeo, flagTimeframe, syncedAt)
+					rows, err := collectRelatedTerms(ctx, c, db, cmd, keyword, widget, "topic", flagGeo, flagTimeframe, flagCategory, syncedAt)
 					if err != nil {
 						return classifyAPIError(err, flags)
 					}

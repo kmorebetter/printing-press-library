@@ -5,6 +5,8 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -79,6 +81,19 @@ func newTrendsInterestCmd(flags *rootFlags) *cobra.Command {
 				defer db.Close()
 			}
 
+			// Google Trends normalizes interest values relative to the full
+			// comparison set, and category/property independently change which
+			// data is returned -- so all three (not just keyword/geo/timeframe/
+			// date) must be part of the cache identity, or a later sync with a
+			// different category, property, or compare set silently overwrites a
+			// differently-scoped series under the same ID. compareScope is
+			// sorted so the same peer set in a different --compare order still
+			// maps to the same cache identity.
+			sortedKeywords := append([]string(nil), keywords...)
+			sort.Strings(sortedKeywords)
+			compareScope := strings.Join(sortedKeywords, ",")
+			categoryStr := strconv.Itoa(flagCategory)
+
 			for _, p := range points {
 				date := p.Time.UTC().Format("2006-01-02")
 				for i, kw := range keywords {
@@ -89,7 +104,8 @@ func newTrendsInterestCmd(flags *rootFlags) *cobra.Command {
 					out = append(out, row)
 					if db != nil {
 						body, _ := json.Marshal(row)
-						if err := db.Upsert("gt_interest_point", sha256ID(kw, flagGeo, flagTimeframe, date), body); err != nil {
+						id := sha256ID(kw, flagGeo, flagTimeframe, categoryStr, flagProperty, compareScope, date)
+						if err := db.Upsert("gt_interest_point", id, body); err != nil {
 							fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to cache interest point for %q: %v\n", kw, err)
 						}
 					}
@@ -99,7 +115,8 @@ func newTrendsInterestCmd(flags *rootFlags) *cobra.Command {
 				for _, kw := range keywords {
 					q := gtKeywordQueryRecord{Keyword: kw, Geo: flagGeo, Timeframe: flagTimeframe, LastSyncedAt: syncedAt}
 					body, _ := json.Marshal(q)
-					if err := db.Upsert("gt_keyword_query", sha256ID(kw, flagGeo, flagTimeframe), body); err != nil {
+					id := sha256ID(kw, flagGeo, flagTimeframe, categoryStr, flagProperty, compareScope)
+					if err := db.Upsert("gt_keyword_query", id, body); err != nil {
 						fmt.Fprintf(cmd.ErrOrStderr(), "warning: failed to cache keyword query for %q: %v\n", kw, err)
 					}
 				}
