@@ -15,12 +15,15 @@ package cli
 // interest`; read by `trends changes`, `trends opportunities`, and `trends
 // seasonality`.
 type gtInterestPointRecord struct {
-	Keyword   string `json:"keyword"`
-	Geo       string `json:"geo"`
-	Timeframe string `json:"timeframe"`
-	Date      string `json:"date"`
-	Value     int    `json:"value"`
-	SyncedAt  string `json:"synced_at"`
+	Keyword      string `json:"keyword"`
+	Geo          string `json:"geo"`
+	Timeframe    string `json:"timeframe"`
+	Date         string `json:"date"`
+	Value        int    `json:"value"`
+	Category     int    `json:"category"`
+	Property     string `json:"property"`
+	CompareScope string `json:"compare_scope"`
+	SyncedAt     string `json:"synced_at"`
 }
 
 // gtRegionInterestRecord is the gt_region_interest resource. Written by
@@ -46,6 +49,7 @@ type gtRelatedTermRecord struct {
 	IsBreakout bool   `json:"is_breakout"`
 	Geo        string `json:"geo"`
 	Timeframe  string `json:"timeframe"`
+	Category   int    `json:"category"`
 	SyncedAt   string `json:"synced_at"`
 }
 

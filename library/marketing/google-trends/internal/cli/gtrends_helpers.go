@@ -159,3 +159,67 @@ func queryInterestPointsForKeywordGeo(db *store.Store, keyword, geo string) ([]g
 	}
 	return out, rows.Err()
 }
+
+// filterInterestRowsToLatestScope narrows rows to only those matching the
+// category/property/compare_scope of the most-recently-synced row. Category,
+// property, and the --compare peer set each change what Google Trends
+// returns for the same keyword/geo/timeframe; without this filter, syncing
+// the same keyword under two different scopes (e.g. two categories) would
+// silently blend both scoped series into one when a local command diffs,
+// averages, or ranks the cached history -- the on-disk rows now coexist
+// (the cache key includes scope), but the read side must still pick one
+// scope to reason about. Defaulting to "whatever was synced most recently"
+// matches these commands' existing latest-sync-instant convention.
+func filterInterestRowsToLatestScope(rows []gtInterestPointRecord) []gtInterestPointRecord {
+	if len(rows) == 0 {
+		return rows
+	}
+	latestIdx := 0
+	var latestT time.Time
+	for i, r := range rows {
+		t, err := time.Parse(time.RFC3339, r.SyncedAt)
+		if err != nil {
+			continue
+		}
+		if t.After(latestT) {
+			latestT = t
+			latestIdx = i
+		}
+	}
+	scope := rows[latestIdx]
+	out := make([]gtInterestPointRecord, 0, len(rows))
+	for _, r := range rows {
+		if r.Category == scope.Category && r.Property == scope.Property && r.CompareScope == scope.CompareScope {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// filterRelatedRowsToLatestScope is filterInterestRowsToLatestScope's
+// counterpart for gt_related_term rows, scoped by category.
+func filterRelatedRowsToLatestScope(rows []gtRelatedTermRecord) []gtRelatedTermRecord {
+	if len(rows) == 0 {
+		return rows
+	}
+	latestIdx := 0
+	var latestT time.Time
+	for i, r := range rows {
+		t, err := time.Parse(time.RFC3339, r.SyncedAt)
+		if err != nil {
+			continue
+		}
+		if t.After(latestT) {
+			latestT = t
+			latestIdx = i
+		}
+	}
+	scope := rows[latestIdx].Category
+	out := make([]gtRelatedTermRecord, 0, len(rows))
+	for _, r := range rows {
+		if r.Category == scope {
+			out = append(out, r)
+		}
+	}
+	return out
+}

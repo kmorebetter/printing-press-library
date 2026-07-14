@@ -127,6 +127,7 @@ func newNovelTrendsSeasonalityCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("querying interest points: %w", err)
 			}
+			rows = filterInterestRowsToLatestScope(rows)
 			if len(rows) == 0 {
 				return notFoundErr(fmt.Errorf("no interest-over-time history in the local store for %q; run 'trends interest %s' first", keyword, keyword))
 			}

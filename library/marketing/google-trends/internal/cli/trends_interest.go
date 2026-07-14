@@ -100,7 +100,7 @@ func newTrendsInterestCmd(flags *rootFlags) *cobra.Command {
 					if i >= len(p.Values) {
 						continue
 					}
-					row := gtInterestPointRecord{Keyword: kw, Geo: flagGeo, Timeframe: flagTimeframe, Date: date, Value: p.Values[i], SyncedAt: syncedAt}
+					row := gtInterestPointRecord{Keyword: kw, Geo: flagGeo, Timeframe: flagTimeframe, Date: date, Value: p.Values[i], Category: flagCategory, Property: flagProperty, CompareScope: compareScope, SyncedAt: syncedAt}
 					out = append(out, row)
 					if db != nil {
 						body, _ := json.Marshal(row)

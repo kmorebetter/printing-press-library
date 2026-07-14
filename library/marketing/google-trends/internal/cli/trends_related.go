@@ -35,7 +35,7 @@ func collectRelatedTerms(ctx context.Context, c *client.Client, db *store.Store,
 		for _, t := range terms {
 			rec := gtRelatedTermRecord{
 				Keyword: keyword, Term: t.Query, Kind: kind, Facet: facetLabel,
-				Value: t.Value, IsBreakout: t.IsBreakout, Geo: geo, Timeframe: timeframe, SyncedAt: syncedAt,
+				Value: t.Value, IsBreakout: t.IsBreakout, Geo: geo, Timeframe: timeframe, Category: category, SyncedAt: syncedAt,
 			}
 			out = append(out, rec)
 			if db != nil {

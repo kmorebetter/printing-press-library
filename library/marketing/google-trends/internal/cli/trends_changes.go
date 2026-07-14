@@ -210,10 +210,12 @@ func newNovelTrendsChangesCmd(flags *rootFlags) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("querying related terms: %w", err)
 			}
+			relatedRows = filterRelatedRowsToLatestScope(relatedRows)
 			interestRows, err := queryInterestPointsForKeyword(db, keyword)
 			if err != nil {
 				return fmt.Errorf("querying interest points: %w", err)
 			}
+			interestRows = filterInterestRowsToLatestScope(interestRows)
 
 			relatedNote := diffRelatedTerms(relatedRows, cutoff, &result)
 			interestNote := diffInterestPoints(interestRows, cutoff, &result)
