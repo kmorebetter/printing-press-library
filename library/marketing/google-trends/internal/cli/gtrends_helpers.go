@@ -161,15 +161,18 @@ func queryInterestPointsForKeywordGeo(db *store.Store, keyword, geo string) ([]g
 }
 
 // filterInterestRowsToLatestScope narrows rows to only those matching the
-// category/property/compare_scope of the most-recently-synced row. Category,
-// property, and the --compare peer set each change what Google Trends
-// returns for the same keyword/geo/timeframe; without this filter, syncing
-// the same keyword under two different scopes (e.g. two categories) would
-// silently blend both scoped series into one when a local command diffs,
-// averages, or ranks the cached history -- the on-disk rows now coexist
-// (the cache key includes scope), but the read side must still pick one
-// scope to reason about. Defaulting to "whatever was synced most recently"
-// matches these commands' existing latest-sync-instant convention.
+// full scope (geo, timeframe, category, property, compare_scope) of the
+// most-recently-synced row. Every one of those dimensions changes what
+// Google Trends returns for the same keyword; without this filter, syncing
+// the same keyword under two different scopes (e.g. two categories, or two
+// geos) would silently blend both scoped series into one when a local
+// command diffs, averages, or ranks the cached history -- the on-disk rows
+// now coexist (the cache key includes scope), but the read side must still
+// pick one scope to reason about. Defaulting to "whatever was synced most
+// recently" matches these commands' existing latest-sync-instant convention.
+// Callers that already scope by geo (e.g. queryInterestPointsForKeywordGeo)
+// still need this: it additionally narrows by timeframe/category/property/
+// compare_scope, which that geo-only query does not filter on.
 func filterInterestRowsToLatestScope(rows []gtInterestPointRecord) []gtInterestPointRecord {
 	if len(rows) == 0 {
 		return rows
@@ -189,7 +192,8 @@ func filterInterestRowsToLatestScope(rows []gtInterestPointRecord) []gtInterestP
 	scope := rows[latestIdx]
 	out := make([]gtInterestPointRecord, 0, len(rows))
 	for _, r := range rows {
-		if r.Category == scope.Category && r.Property == scope.Property && r.CompareScope == scope.CompareScope {
+		if r.Geo == scope.Geo && r.Timeframe == scope.Timeframe &&
+			r.Category == scope.Category && r.Property == scope.Property && r.CompareScope == scope.CompareScope {
 			out = append(out, r)
 		}
 	}
@@ -197,7 +201,11 @@ func filterInterestRowsToLatestScope(rows []gtInterestPointRecord) []gtInterestP
 }
 
 // filterRelatedRowsToLatestScope is filterInterestRowsToLatestScope's
-// counterpart for gt_related_term rows, scoped by category.
+// counterpart for gt_related_term rows. Geo, timeframe, and category are all
+// part of the cache identity (so all three can coexist for the same
+// keyword); this must match on all three, not just category, or two
+// same-category rows from different geos or timeframes would still be
+// compared/diffed together as if they were one snapshot scope.
 func filterRelatedRowsToLatestScope(rows []gtRelatedTermRecord) []gtRelatedTermRecord {
 	if len(rows) == 0 {
 		return rows
@@ -214,10 +222,10 @@ func filterRelatedRowsToLatestScope(rows []gtRelatedTermRecord) []gtRelatedTermR
 			latestIdx = i
 		}
 	}
-	scope := rows[latestIdx].Category
+	scope := rows[latestIdx]
 	out := make([]gtRelatedTermRecord, 0, len(rows))
 	for _, r := range rows {
-		if r.Category == scope {
+		if r.Geo == scope.Geo && r.Timeframe == scope.Timeframe && r.Category == scope.Category {
 			out = append(out, r)
 		}
 	}
